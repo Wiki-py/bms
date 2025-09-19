@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const AddProductPage = () => {
+  const navigate = useNavigate();
   // Initial form state
   const [product, setProduct] = useState({
     name: '',
@@ -64,7 +66,7 @@ const AddProductPage = () => {
         
         {/* Price */}
         <div>
-          <label className="block text-sm font-medium text-gray-700">Price</label>
+          <label className="block text-sm font-medium text-gray-700">Cost Price per unit</label>
           <input
             type="number"
             name="price"
@@ -120,9 +122,15 @@ const AddProductPage = () => {
         </div>
         
         {/* Submit Button */}
-        <button type="submit" className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors">
+        <div className="flex justify-center md:justify-end gap-4">
+          <button onClick={() =>navigate('/products')}  className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors">
+          Back to Products
+        </button>
+        <button type="submit" className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors">
           Add Product
         </button>
+        </div>
+        
       </form>
     </div>
   );

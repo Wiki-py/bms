@@ -74,22 +74,22 @@ const Reports = () => {
 
       {/* Cards Section */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white p-4 rounded-lg shadow-md">
+        <div className="bg-green-500 text-white p-4 rounded-lg shadow-md">
           <h2 className="text-lg font-semibold mb-2">Total Sales Reports</h2>
           <p className="text-2xl font-bold">{salesData.length}</p>
-          <p className="text-sm text-gray-600">Across all periods</p>
+          <p className="text-sm text-white">Across all periods</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow-md">
-          <h2 className="text-lg font-semibold mb-2">Total Inventory Reports</h2>
-          <p className="text-2xl font-bold">{inventoryData.length}</p>
-          <p className="text-sm text-gray-600">Across all periods</p>
+        <div className="bg-blue-500 p-4 rounded-lg shadow-md">
+          <h2 className="text-lg font-semibold mb-2 text-white">Total Inventory Reports</h2>
+          <p className="text-2xl text-white font-bold">{inventoryData.length}</p>
+          <p className="text-sm text-white">Across all periods</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow-md">
-          <h2 className="text-lg font-semibold mb-2">Total Revenue</h2>
-          <p className="text-2xl font-bold">
+        <div className="bg-orange-500 p-4 rounded-lg shadow-md">
+          <h2 className="text-lg text-white font-semibold mb-2">Total Revenue</h2>
+          <p className="text-2xl text-white font-bold">
             ${salesData.reduce((sum, report) => sum + (report.revenue || 0), 0).toFixed(2)}
           </p>
-          <p className="text-sm text-gray-600">From sales reports</p>
+          <p className="text-sm text-white">From sales reports</p>
         </div>
       </div>
 

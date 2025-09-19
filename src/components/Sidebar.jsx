@@ -17,7 +17,7 @@ function Sidebar() {
     { path: '/point-of-sale', label: 'Point of sale', icon: <FaCashRegister /> },
     { path: '/products', label: 'Products', icon: <FaShoppingCart /> },
     { path: '/reports', label: 'Reports', icon: <FaFileAlt /> },
-    { path: '/inventory', label: 'Inventory', icon: <FaBox /> },
+    { path: '/inventory', label: 'Inventory Report', icon: <FaBox /> },
     { path: '/users', label: 'Users', icon : <FaUser /> },
     { path: '/my_profile', label: 'My Profile', icon: <FaUserCircle /> },
     { path: '/business_settings', label: 'Business Settings', icon: <FaCog /> },
