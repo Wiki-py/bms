@@ -15,7 +15,21 @@ import AddProductPage from './components/AddProduct';
 import AddItem from './components/AddInventory';
 import InstallPrompt from './components/InstallPrompt';
 import usePWAInstall from './hooks/usePWAInstall';
+import Login from './pages/Login';
+import Logout from './pages/Logout';
+
+
 // Placeholder components for routes
+function LogoutRoute(){
+  return(
+    <Logout />
+  )
+}
+function LoginRoute(){
+  return(
+    <Login />
+  )
+}
 function AddingInventory() {
   return (
     <AddItem />
@@ -57,9 +71,6 @@ function Reports() {
     <ReportPage />
   );
 }
-function Logout() {
-  return <h2 className="text-2xl p-4">Logged Out</h2>;
-}
 function BusinessSettingsPage() {
   return (
     <Settings />
@@ -85,13 +96,14 @@ function App() {
         <Header user={user} />
         <main className="p-4 md:ml-64"> {/* Offset for sidebar width */}
           <Routes>
+            <Route path="/login" element={<LoginRoute />} />
             <Route path="/" element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/point-of-sale" element={<PointOfSale />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/products" element={< Products />} />
-            <Route path="/logout" element={<Logout />} />
+            <Route path="/logout" element={<LogoutRoute />} />
             <Route path="/users" element={<Users />} />
             <Route path="/my_profile" element={<Profile />} />
             <Route path="/business_settings" element={<BusinessSettingsPage />} />
