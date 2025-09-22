@@ -1,6 +1,8 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const ManageUsersPage = () => {
+  const navigate = useNavigate();
   // Sample user data
   const userData = [
     { id: 1, name: 'John Doe', email: 'john.doe@example.com', role: 'Admin', status: 'Active' },
@@ -47,7 +49,7 @@ const ManageUsersPage = () => {
       
       {/* Add User Button - Full width on mobile */}
       <div className="mt-4">
-        <button className="w-full md:w-auto bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors">
+        <button onClick={() => navigate('/add_user')} className="w-full md:w-auto bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors">
           Add New User
         </button>
       </div>

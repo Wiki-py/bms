@@ -1,25 +1,31 @@
 import { Routes, Route } from 'react-router-dom';
 import { BrowserRouter as Router} from 'react-router-dom';
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import POSDashboard from './components/Posdashboard';
-import StaffDashboard from './components/StaffDashboard';
-import ProductsPage from './components/ProductsPage';
-import ReportPage from './components/ReportPage';
-import InventoryPage from './components/InventoryPage';
-import Users from './components/Users';
-import Profile from './components/Profile';
-import Settings from './components/Settings';
-import UDashboard from './components/UDashBoard';
-import AddProductPage from './components/AddProduct'; 
-import AddItem from './components/AddInventory';
-import InstallPrompt from './components/InstallPrompt';
+import Header from './pages/Header';
+import Sidebar from './pages/Sidebar';
+import POSDashboard from './pages/Posdashboard';
+import StaffDashboard from './pages/core/StaffDashboard';
+import ProductsPage from './pages/ProductsPage';
+import ReportPage from './pages/ReportPage';
+import InventoryPage from './pages/inventory/InventoryPage';
+import Users from './pages/Users';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import UDashboard from './pages/core/UDashBoard';
+import AddProductPage from './pages/AddProduct'; 
+import AddItem from './pages/inventory/AddInventory';
+import InstallPrompt from './pages/InstallPrompt';
 import usePWAInstall from './hooks/usePWAInstall';
 import Login from './pages/Login';
 import Logout from './pages/Logout';
+import AddUser from './pages/core/AddUser';
 
 
 // Placeholder components for routes
+function AddUserRiute(){
+  return(
+    <AddUser />
+  )
+}
 function LogoutRoute(){
   return(
     <Logout />
@@ -110,6 +116,7 @@ function App() {
             <Route path= "staff_dashboard" element={<UDashboard />} />
             <Route path="/add_product" element={<AddingProducts />} />
             <Route path='/add_inventory' element={<AddingInventory />} />
+            <Route path='/add_user' element={<AddUserRiute />} />
           </Routes>
         </main>
       </div>
