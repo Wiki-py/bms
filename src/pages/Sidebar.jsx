@@ -18,7 +18,7 @@ function Sidebar() {
     { path: '/inventory', label: 'Inventory Report', icon: <FaBox className="w-5 h-5" /> },
     { path: '/users', label: 'Users', icon: <FaUser className="w-5 h-5" /> },
     { path: '/my_profile', label: 'My Profile', icon: <FaUserCircle className="w-5 h-5" /> },
-    { path: '/business_settings', label: 'Business Settings', icon: <FaCog className="w-5 h-5" /> },
+    { path: '/settings', label: 'Business Settings', icon: <FaCog className="w-5 h-5" /> },
   ];
 
   return (

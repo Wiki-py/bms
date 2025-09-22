@@ -9,7 +9,7 @@ import ReportPage from './pages/ReportPage';
 import InventoryPage from './pages/inventory/InventoryPage';
 import Users from './pages/Users';
 import Profile from './pages/Profile';
-import Settings from './pages/Settings';
+import BusinessSettingsPage from './pages/Settings';
 import UDashboard from './pages/core/UDashBoard';
 import AddProductPage from './pages/AddProduct'; 
 import AddItem from './pages/inventory/AddInventory';
@@ -77,7 +77,7 @@ function Reports() {
     <ReportPage />
   );
 }
-function BusinessSettingsPage() {
+function BusinessSettingsPageRoute() {
   return (
     <Settings />
   )
@@ -100,7 +100,7 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         <Header user={user} />
-        <main className="p-4 md:ml-64"> {/* Offset for sidebar width */}
+        <main className="p-1 md:ml-64"> {/* Offset for sidebar width */}
           <Routes>
             <Route path="/login" element={<LoginRoute />} />
             <Route path="/" element={<Dashboard />} />
