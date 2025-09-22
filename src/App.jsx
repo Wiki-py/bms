@@ -112,7 +112,7 @@ function App() {
             <Route path="/logout" element={<LogoutRoute />} />
             <Route path="/users" element={<Users />} />
             <Route path="/my_profile" element={<Profile />} />
-            <Route path="/business_settings" element={<BusinessSettingsPage />} />
+            <Route path="/settings" element={<BusinessSettingsPage />} />
             <Route path= "staff_dashboard" element={<UDashboard />} />
             <Route path="/add_product" element={<AddingProducts />} />
             <Route path='/add_inventory' element={<AddingInventory />} />
