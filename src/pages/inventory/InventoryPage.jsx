@@ -6,6 +6,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import { useNavigate } from 'react-router-dom';
 
 // Register Chart.js components
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -23,6 +24,7 @@ const mockItems = [
 const InventoryReport = () => {
   const [items] = useState(mockItems); // Use mock data for now
   const currentDate = new Date('2025-09-22T00:00:00Z'); // Based on provided current date
+  const navigate = useNavigate();
 
   // Calculate inventory value
   const inventoryValue = items.reduce((total, item) => total + item.quantity * item.price, 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -93,12 +95,40 @@ const InventoryReport = () => {
     return `${diffDays} days ago`;
   };
 
+  const handleUpdateInventory = () => {
+    navigate('/update_inventory');
+  };
+
+  const handleExportReport = () => {
+    // Export functionality would go here
+    alert('Export functionality would be implemented here!');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 py-8">
       <div className="max-w-7xl mx-auto my-2 sm:my-4 md:my-6 px-2 sm:px-4 md:px-6">
-        <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 sm:mb-8 md:mb-10 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-          Inventory Report
-        </h1>
+        {/* Header with Action Buttons */}
+        <div className="flex flex-col lg:flex-row justify-between items-center mb-6 sm:mb-8 md:mb-10 gap-4">
+          <h1 className="text-3xl sm:text-4xl font-bold text-center lg:text-left bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+            Inventory Report
+          </h1>
+          
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+            <button 
+              onClick={handleUpdateInventory}
+              className="group bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 sm:px-8 py-3 rounded-xl hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
+            >
+              <span>✏️</span> Update Inventory
+            </button>
+            <button 
+              onClick={handleExportReport}
+              className="group bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 sm:px-8 py-3 rounded-xl hover:from-emerald-600 hover:to-teal-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
+            >
+              <span>📊</span> Export Report
+            </button>
+          </div>
+        </div>
 
         {/* Inventory Value, Low Stock, and Out of Stock Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8 mb-6 sm:mb-8 md:mb-10">
@@ -132,6 +162,30 @@ const InventoryReport = () => {
                 <p className="text-xl sm:text-2xl md:text-3xl font-bold">{outOfStockItems.length}</p>
               </div>
               <div className="text-5xl opacity-75 group-hover:opacity-100 transition-opacity">🚫</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions Bar for Mobile */}
+        <div className="lg:hidden fixed bottom-4 left-4 right-4 z-10">
+          <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg p-3 border border-gray-200">
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={handleUpdateInventory}
+                className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"
+              >
+                <span>✏️</span> Update
+              </button>
+              <div className="text-xs text-gray-600 text-center">
+                <div className="font-semibold">{items.length} items</div>
+                <div>{lowStockItems.length} low stock</div>
+              </div>
+              <button 
+                onClick={handleExportReport}
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"
+              >
+                <span>📊</span> Export
+              </button>
             </div>
           </div>
         </div>
@@ -189,7 +243,14 @@ const InventoryReport = () => {
 
         {/* Inventory Summary Table */}
         <div className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 p-4 sm:p-6 md:p-8 bg-gradient-to-r from-gray-50 to-gray-100">Inventory Summary</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 sm:p-6 md:p-8 bg-gradient-to-r from-gray-50 to-gray-100">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 mb-2 sm:mb-0">Inventory Summary</h2>
+            <div className="text-sm text-gray-600">
+              Total: {items.length} items • 
+              <span className="text-orange-600 ml-1">{lowStockItems.length} low stock</span> • 
+              <span className="text-red-600 ml-1">{outOfStockItems.length} out of stock</span>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-gradient-to-r from-gray-100 to-gray-200">
@@ -216,7 +277,7 @@ const InventoryReport = () => {
                           {item.category}
                         </span>
                       </td>
-                      <td className="px-4 sm:px-6 md:px-8 py-4 text-gray-900 font-semibold">${(item.quantity * item.price).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
+                      <td className="px-4 sm:px-6 md:px-8 py-4 text-gray-900 font-semibold">${(item.quantity * item.price).toFixed(2)}</td>
                       <td className="px-4 sm:px-6 md:px-8 py-4 text-gray-500 text-sm">{getDaysAgo(item.created_at)}</td>
                     </tr>
                   ))
@@ -232,10 +293,19 @@ const InventoryReport = () => {
           </div>
         </div>
 
-        {/* Export Button */}
-        <div className="mt-6 sm:mt-8 md:mt-10 flex justify-center">
-          <button className="group bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 sm:px-8 py-3 rounded-xl hover:from-emerald-600 hover:to-teal-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center gap-2">
-            <span>📊</span> Export Report
+        {/* Additional Action Buttons at Bottom */}
+        <div className="mt-6 sm:mt-8 md:mt-10 flex flex-col sm:flex-row justify-center gap-4">
+          <button 
+            onClick={handleUpdateInventory}
+            className="group bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 sm:px-8 py-3 rounded-xl hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            <span>✏️</span> Update Inventory Items
+          </button>
+          <button 
+            onClick={handleExportReport}
+            className="group bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 sm:px-8 py-3 rounded-xl hover:from-emerald-600 hover:to-teal-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            <span>📊</span> Export Full Report
           </button>
         </div>
       </div>
