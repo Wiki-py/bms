@@ -20,9 +20,15 @@ import Logout from './pages/Logout';
 import AddUser from './pages/core/AddUser';
 import InventoryUpdate from './pages/inventory/InventoryUpdate';
 import AddBranch from './pages/AddBranch';
+import Employee from './pages/Employee';
 
 
 // Placeholder components for routes
+function EmployeeRoute(){
+  return(
+    <Employee />
+  )
+}
 function AddBranchRoute(){
   return(
     <AddBranch />
@@ -131,6 +137,7 @@ function App() {
             <Route path='/add_user' element={<AddUserRiute />} />
             <Route path='/update_inventory' element={<InventoryUpdateRoute />} />
             <Route path='/add_branch' element={<AddBranchRoute />} />
+            <Route path= '/employee' elememt={<EmployeeRoute/>} />
           </Routes>
         </main>
       </div>

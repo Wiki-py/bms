@@ -7,69 +7,114 @@ const ManageUsersPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [userData, setUserData] = useState([
-    {
-      id: 1,
-      name: 'John Doe',
-      email: 'john.doe@example.com',
-      role: 'Admin',
-      status: 'Active',
-      location: 'Downtown Store',
-      avatar: 'https://via.placeholder.com/40/4F46E5/FFFFFF?text=JD',
-    },
-    {
-      id: 2,
-      name: 'Jane Smith',
-      email: 'jane.smith@example.com',
-      role: 'Manager',
-      status: 'Active',
-      location: 'Uptown Store',
-      avatar: 'https://via.placeholder.com/40/EC4899/FFFFFF?text=JS',
-    },
-    {
-      id: 3,
-      name: 'Bob Johnson',
-      email: 'bob.johnson@example.com',
-      role: 'Staff',
-      status: 'Inactive',
-      location: 'Mall Outlet',
-      avatar: 'https://via.placeholder.com/40/F59E0B/FFFFFF?text=BJ',
-    },
-    {
-      id: 4,
-      name: 'Alice Brown',
-      email: 'alice.brown@example.com',
-      role: 'Cashier',
-      status: 'Active',
-      location: 'Downtown Store',
-      avatar: 'https://via.placeholder.com/40/10B981/FFFFFF?text=AB',
-    },
-    {
-      id: 5,
-      name: 'Charlie Wilson',
-      email: 'charlie.wilson@example.com',
-      role: 'Manager',
-      status: 'Active',
-      location: 'Mall Outlet',
-      avatar: 'https://via.placeholder.com/40/8B5CF6/FFFFFF?text=CW',
-    },
-  ]);
-  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [roles, setRoles] = useState(['Admin', 'Manager', 'Staff', 'Cashier']);
+  const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState({});
+  const API_BASE = 'http://127.0.0.1:8000/api';
 
-  // Sample locations for the dropdown
-  const locations = ['Downtown Store', 'Uptown Store', 'Mall Outlet'];
-  const roles = ['Admin', 'Manager', 'Staff', 'Cashier'];
-
-  // Simulate fetching user data from an API
+  // Fetch users and branches on mount
   useEffect(() => {
-    setLoading(true);
-    // Replace with actual API call
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    const fetchData = async () => {
+      let accessToken = localStorage.getItem('access');
+      if (!accessToken) {
+        alert('Please log in to access the dashboard.');
+        navigate('/login');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        // Fetch users
+        const usersResponse = await fetch(`${API_BASE}/users/`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+        if (!usersResponse.ok) {
+          if (usersResponse.status === 401) {
+            // Attempt token refresh
+            const refreshToken = localStorage.getItem('refresh');
+            if (refreshToken) {
+              const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh: refreshToken }),
+              });
+              if (refreshResponse.ok) {
+                const refreshData = await refreshResponse.json();
+                accessToken = refreshData.access;
+                localStorage.setItem('access', accessToken);
+                // Retry users fetch
+                const retryResponse = await fetch(`${API_BASE}/users/`, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                  },
+                });
+                if (!retryResponse.ok) throw new Error('Failed to fetch users after refresh');
+                const usersData = await retryResponse.json();
+                setUserData(
+                  usersData.map((user) => ({
+                    id: user.id,
+                    name: user.name,
+                    email: user.email || `${user.name.replace(' ', '.').toLowerCase()}@example.com`, // Mock email if not provided
+                    role: user.role,
+                    status: user.status,
+                    location: user.location,
+                    avatar: `https://via.placeholder.com/40/${user.role === 'Admin' ? '4F46E5' : user.role === 'Manager' ? 'EC4899' : user.role === 'Staff' ? 'F59E0B' : '10B981'}/FFFFFF?text=${user.name[0]}${user.name.split(' ')[1]?.[0] || ''}`,
+                  }))
+                );
+              } else {
+                throw new Error('Session expired');
+              }
+            } else {
+              throw new Error('Unauthorized');
+            }
+          } else {
+            throw new Error('Failed to fetch users');
+          }
+        } else {
+          const usersData = await usersResponse.json();
+          setUserData(
+            usersData.map((user) => ({
+              id: user.id,
+              name: user.name,
+              email: user.email || `${user.name.replace(' ', '.').toLowerCase()}@example.com`,
+              role: user.role,
+              status: user.status,
+              location: user.location,
+              avatar: `https://via.placeholder.com/40/${user.role === 'Admin' ? '4F46E5' : user.role === 'Manager' ? 'EC4899' : user.role === 'Staff' ? 'F59E0B' : '10B981'}/FFFFFF?text=${user.name[0]}${user.name.split(' ')[1]?.[0] || ''}`,
+            }))
+          );
+        }
+
+        // Fetch branches for locations
+        const branchesResponse = await fetch(`${API_BASE}/branches/`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+        if (!branchesResponse.ok) throw new Error('Failed to fetch branches');
+        const branchesData = await branchesResponse.json();
+        setLocations(branchesData.map((branch) => branch.location));
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setErrors({ general: err.message });
+        if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+          localStorage.removeItem('access');
+          localStorage.removeItem('refresh');
+          navigate('/login');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [navigate]);
 
   // Filter users based on search query
   const filteredUsers = userData.filter(
@@ -123,23 +168,64 @@ const ManageUsersPage = () => {
   };
 
   // Save updated user data
-  const saveUser = () => {
+  const saveUser = async () => {
     if (!validateForm()) return;
-    setUserData((prev) =>
-      prev.map((user) => (user.id === selectedUser.id ? selectedUser : user))
-    );
-    closeModal();
-    // In a real app, send updated user data to the backend
-    // Example: fetch(`/api/users/${selectedUser.id}`, { method: 'PUT', body: JSON.stringify(selectedUser) });
+    const accessToken = localStorage.getItem('access');
+    try {
+      const response = await fetch(`${API_BASE}/users/${selectedUser.id}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          name: selectedUser.name,
+          email: selectedUser.email,
+          role: selectedUser.role,
+          status: selectedUser.status,
+          location: selectedUser.location,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update user');
+      const updatedUser = await response.json();
+      setUserData((prev) =>
+        prev.map((user) =>
+          user.id === selectedUser.id
+            ? {
+                ...user,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                status: updatedUser.status,
+                location: updatedUser.location,
+              }
+            : user
+        )
+      );
+      closeModal();
+    } catch (err) {
+      console.error('Update user error:', err);
+      setErrors({ general: 'Failed to update user' });
+    }
   };
 
   // Delete user
-  const deleteUser = () => {
-    if (selectedUser) {
+  const deleteUser = async () => {
+    if (!selectedUser) return;
+    const accessToken = localStorage.getItem('access');
+    try {
+      const response = await fetch(`${API_BASE}/users/${selectedUser.id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      if (!response.ok && response.status !== 204) throw new Error('Failed to delete user');
       setUserData((prev) => prev.filter((user) => user.id !== selectedUser.id));
       closeDeleteModal();
-      // In a real app, send delete request to the backend
-      // Example: fetch(`/api/users/${selectedUser.id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Delete user error:', err);
+      setErrors({ general: 'Failed to delete user' });
     }
   };
 
@@ -171,6 +257,23 @@ const ManageUsersPage = () => {
     );
   }
 
+  if (errors.general) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center p-6 bg-red-50 border border-red-200 rounded-xl">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
+          <p className="text-red-700 mb-4">{errors.general}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 via-indigo-50 to-purple-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
@@ -194,7 +297,7 @@ const ManageUsersPage = () => {
           </div>
         </div>
 
-        {/* Users Cards - Responsive grid */}
+        {/* Users Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
           {filteredUsers.map((user) => (
             <div
@@ -270,9 +373,7 @@ const ManageUsersPage = () => {
                     value={selectedUser.name}
                     onChange={handleInputChange}
                     className={`w-full p-3 border rounded-xl focus:outline-none focus:ring-2 transition-all ${
-                      errors.name 
-                        ? 'border-red-300 focus:ring-red-500' 
-                        : 'border-gray-300 focus:ring-teal-500'
+                      errors.name ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
                     }`}
                   />
                   {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
@@ -285,9 +386,7 @@ const ManageUsersPage = () => {
                     value={selectedUser.email}
                     onChange={handleInputChange}
                     className={`w-full p-3 border rounded-xl focus:outline-none focus:ring-2 transition-all ${
-                      errors.email 
-                        ? 'border-red-300 focus:ring-red-500' 
-                        : 'border-gray-300 focus:ring-teal-500'
+                      errors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
                     }`}
                   />
                   {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
@@ -363,7 +462,9 @@ const ManageUsersPage = () => {
                 </svg>
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">Delete User?</h3>
-              <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete <span className="font-semibold text-indigo-600">{selectedUser.name}</span>? This action cannot be undone.</p>
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to delete <span className="font-semibold text-indigo-600">{selectedUser.name}</span>? This action cannot be undone.
+              </p>
               <div className="flex justify-center gap-4">
                 <button
                   onClick={closeDeleteModal}

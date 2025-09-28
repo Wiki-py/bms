@@ -12,6 +12,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.9.0",
     "@tailwindcss/vite": "^4.1.13",
+    "axios": "^1.12.2",
     "axois": "^0.0.1-security",
     "chart.js": "^4.5.0",
     "idb": "^8.0.3",

@@ -15,20 +15,55 @@ const Logout = () => {
 
 
   return (
-    <div className="max-w-md mx-auto my-4 sm:my-6 md:my-8 px-2 sm:px-4 md:px-6">
-      <div className="bg-white border border-gray-200 shadow-sm rounded-lg p-4 sm:p-6 md:p-8 text-center">
-        <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-4 sm:mb-6">
-          You Have Been Logged Out
-        </h2>
-        <p className="text-xs sm:text-sm md:text-base text-gray-600 mb-4 sm:mb-6">
-          You will be redirected to the login page in a few seconds.
-        </p>
-        <button
-          //onClick={handleSupportClick}
-          className="text-xs sm:text-sm md:text-base text-blue-600 hover:underline font-medium"
-        >
-          Contact Support Team
-        </button>
+    <div className='bg-black flex'>
+      <div className='grid grid-cols-3'>
+        <div className='bg-gray-500 roundes-lg p-4 m-4 '>
+          <div>
+            <h3 className='text-white font-bold text-lg p-2'>Card title</h3>
+          </div>
+          <div>
+            <img src="./public\icons\logo512.png" alt="Song cover" className='bg-white rounded-md' />
+          </div>
+          <div>
+            <p className='text-white font-bold align-center'>Card details</p>
+          </div>
+          <button className = "bg-blue-500 text-white p-2 rounded-lg">Download</button>
+        </div>
+        <div className='bg-gray-500 roundes-lg p-4 m-4 '>
+          <div>
+            <h3 className='text-white font-bold text-lg p-2'>Card title</h3>
+          </div>
+          <div>
+            <img src="./public\icons\logo512.png" alt="Song cover" className='bg-white rounded-md' />
+          </div>
+          <div>
+            <p className='text-white font-bold align-center'>Card details</p>
+          </div>
+          <button className = "bg-blue-500 text-white p-2 rounded-lg">Download</button>
+        </div>
+        
+      </div>
+
+
+      <div>
+        <div>
+          <input type="search" className='bg-white rounded-lg p-1 m-3' />
+        </div>
+        <h3 className='text-white'>You may also like</h3>
+        <div className='grid grid-cols-2'>
+          <div className='bg-gray-500 roundes-lg p-4 m-4 '>
+          <div>
+            <h3 className='text-white font-bold text-lg p-2'>Card title</h3>
+          </div>
+          <div>
+            <img src="./public\icons\logo512.png" alt="Song cover" className='bg-white rounded-md' />
+          </div>
+          <div>
+            <p className='text-white font-bold align-center'>Card details</p>
+          </div>
+          <button className = "bg-blue-500 text-white p-2 rounded-lg">Download</button>
+        </div>
+        </div>
       </div>
     </div>
   );

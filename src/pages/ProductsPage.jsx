@@ -1,21 +1,226 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const productsData = [
-  { id: 1, name: 'Product A', cost_price: 29.99, selling_price: 39.99, profits: 10.00, stock: 150, category: 'Electronics', image: 'https://picsum.photos/200/300?random=1' },
-  { id: 2, name: 'Product B', cost_price: 49.99, selling_price: 59.99, profits: 10.00, stock: 80, category: 'Clothing', image: 'https://picsum.photos/200/300?random=2' },
-  { id: 3, name: 'Product C', cost_price: 19.99, selling_price: 29.99, profits: 10.00, stock: 200, category: 'Books', image: 'https://picsum.photos/200/300?random=3' },
-  { id: 4, name: 'Product D', cost_price: 99.99, selling_price: 129.99, profits: 30.00, stock: 50, category: 'Home Appliances', image: 'https://picsum.photos/200/300?random=4' },
-];
 
 const Products = () => {
   const navigate = useNavigate();
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredProducts = productsData.filter((product) =>
+  // API base URL
+  const API_BASE = 'http://127.0.0.1:8000/api';
+
+  // Fetch products on mount
+  // Fetch products on mount
+useEffect(() => {
+  const fetchProducts = async () => {
+    let accessToken = localStorage.getItem('access');
+    if (!accessToken) {
+      alert('Please log in to view products.');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/products/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Map API fields: assume [{id, name, description, cost_price, selling_price, quantity, category, image}]
+        const mappedProducts = data.map(p => ({
+          id: p.id,
+          name: p.name,
+          cost_price: parseFloat(p.cost_price),
+          selling_price: parseFloat(p.selling_price),
+          profits: parseFloat(p.selling_price) - parseFloat(p.cost_price),  // Calculate profits
+          stock: parseInt(p.quantity),
+          category: p.category,  // Assume string or map if FK
+          image: p.image || `https://picsum.photos/200/300?random=${p.id}`,
+        }));
+        setProducts(mappedProducts);
+      } else if (response.status === 401) {
+        // Try refresh
+        const refreshToken = localStorage.getItem('refresh');
+        if (refreshToken) {
+          const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh: refreshToken }),
+          });
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            accessToken = refreshData.access;
+            localStorage.setItem('access', accessToken);
+            // Retry fetch
+            const retryResponse = await fetch(`${API_BASE}/products/`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
+            });
+            if (retryResponse.ok) {
+              const data = await retryResponse.json();
+              const mappedProducts = data.map(p => ({
+                id: p.id,
+                name: p.name,
+                cost_price: parseFloat(p.cost_price),
+                selling_price: parseFloat(p.selling_price),
+                profits: parseFloat(p.selling_price) - parseFloat(p.cost_price),
+                stock: parseInt(p.quantity),
+                category: p.category,
+                image: p.image || `https://picsum.photos/200/300?random=${p.id}`,
+              }));
+              setProducts(mappedProducts);
+            } else {
+              throw new Error('Failed to fetch after refresh');
+            }
+          } else {
+            throw new Error('Session expired');
+          }
+        } else {
+          throw new Error('Unauthorized');
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setError(err.message);
+      if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+        navigate('/login');
+      }
+    } finally {
+      setLoading(false);  // Fixed: Now hides the loader
+    }
+  };
+
+  fetchProducts();
+}, [navigate]);
+
+  // Refetch after delete
+  const refetchProducts = () => {
+    // Reuse fetch logic
+    fetchProducts();  // Wait, fetchProducts is async, but for simplicity, call the inner function
+    // Actually, extract to separate func if needed; here call useEffect deps or separate
+    // For now, since useEffect runs on mount, trigger via state or call directly
+    const fetchProductsInner = async () => {
+      // ... (copy the fetch logic here or extract to util)
+      // To avoid duplication, you can make fetchProducts non-useEffect
+    };
+    // Simplified: reset loading and call
+    setLoading(true);
+    setError(null);
+    // Then call the async fetchProducts() but since it's in useEffect, better to extract
+    // For this, I'll assume you extract to a util or just call window.location.reload() for simplicity, but better:
+    window.location.reload();  // Quick refetch after delete
+  };
+
+  const handleDelete = async (productId) => {
+    if (!window.confirm(`Delete product ${productId}?`)) return;
+
+    let accessToken = localStorage.getItem('access');
+    if (!accessToken) {
+      alert('Please log in.');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/products/${productId}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        alert('Product deleted successfully!');
+        // Refetch or update local state
+        setProducts(products.filter(p => p.id !== productId));
+      } else if (response.status === 401) {
+        // Refresh and retry similar to above
+        const refreshToken = localStorage.getItem('refresh');
+        if (refreshToken) {
+          const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh: refreshToken }),
+          });
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            accessToken = refreshData.access;
+            localStorage.setItem('access', accessToken);
+            // Retry delete
+            const retryResponse = await fetch(`${API_BASE}/products/${productId}/`, {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
+            });
+            if (retryResponse.ok) {
+              alert('Product deleted successfully!');
+              setProducts(products.filter(p => p.id !== productId));
+            } else {
+              throw new Error('Delete failed after refresh');
+            }
+          } else {
+            throw new Error('Session expired');
+          }
+        }
+      } else {
+        const errData = await response.json();
+        throw new Error(errData.detail || 'Delete failed');
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
+  const filteredProducts = products.filter((product) =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading products...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center p-6 bg-red-50 border border-red-200 rounded-xl">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
+          <p className="text-red-700 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
@@ -90,6 +295,7 @@ const Products = () => {
                       src={product.image}
                       alt={product.name}
                       className="w-16 h-16 object-cover rounded-lg mx-auto md:mx-0 transform hover:scale-105 transition-transform duration-200"
+                      onError={(e) => { e.target.src = 'https://picsum.photos/200/300?random=1'; }}
                     />
                   </td>
                   <td
@@ -162,7 +368,7 @@ const Products = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => alert(`Delete product ${product.id}?`)}
+                        onClick={() => handleDelete(product.id)}
                         className="bg-gradient-to-r from-rose-500 to-red-500 text-white px-4 py-2 rounded-lg hover:from-rose-600 hover:to-red-600 transform hover:scale-105 transition-all focus:outline-none focus:ring-2 focus:ring-rose-300 text-xs md:text-sm w-full md:w-auto"
                       >
                         Delete

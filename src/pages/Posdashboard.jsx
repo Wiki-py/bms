@@ -1,17 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';  // Add for auth redirects
 
 const POSDashboard = () => {
-  const [products] = useState([
-    { id: 1, name: 'Laptop', price: 3500000, category: 'Electronics', stock: 15, image: 'https://via.placeholder.com/150?text=Laptop' },
-    { id: 2, name: 'Smartphone', price: 2500000, category: 'Electronics', stock: 32, image: 'https://via.placeholder.com/150?text=Smartphone' },
-    { id: 3, name: 'Headphones', price: 500000, category: 'Electronics', stock: 45, image: 'https://via.placeholder.com/150?text=Headphones' },
-    { id: 4, name: 'Desk Chair', price: 800000, category: 'Furniture', stock: 12, image: 'https://via.placeholder.com/150?text=Chair' },
-    { id: 5, name: 'Coffee Maker', price: 300000, category: 'Appliances', stock: 24, image: 'https://via.placeholder.com/150?text=Coffee+Maker' },
-    { id: 6, name: 'Water Bottle', price: 80000, category: 'Accessories', stock: 60, image: 'https://via.placeholder.com/150?text=Bottle' },
-    { id: 7, name: 'Notebook', price: 35000, category: 'Office', stock: 100, image: 'https://via.placeholder.com/150?text=Notebook' },
-    { id: 8, name: 'Wireless Mouse', price: 150000, category: 'Electronics', stock: 38, image: 'https://via.placeholder.com/150?text=Mouse' },
-  ]);
-
+  const navigate = useNavigate();
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -21,6 +15,102 @@ const POSDashboard = () => {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  // API base URL
+  const API_BASE = 'http://127.0.0.1:8000/api';
+
+  // Fetch products on mount
+  useEffect(() => {
+    const fetchProducts = async () => {
+      let accessToken = localStorage.getItem('access');
+      if (!accessToken) {
+        alert('Please log in to access the dashboard.');
+        navigate('/login');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/products/`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Assume API returns array of products like: [{id, name, description, cost_price, selling_price, quantity, category, image}]
+          // Map selling_price to price, quantity to stock
+          const mappedProducts = data.map(p => ({
+            id: p.id,
+            name: p.name,
+            price: parseFloat(p.selling_price),  // Use selling_price as display price
+            category: p.category,  // Assume string or map if FK
+            stock: parseInt(p.quantity),  // quantity is stock
+            image: p.image || 'https://via.placeholder.com/150?text=No+Image',
+          }));
+          setProducts(mappedProducts);
+        } else if (response.status === 401) {
+          // Try refresh (similar to AddProduct)
+          const refreshToken = localStorage.getItem('refresh');
+          if (refreshToken) {
+            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh: refreshToken }),
+            });
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json();
+              accessToken = refreshData.access;
+              localStorage.setItem('access', accessToken);
+              // Retry fetch
+              const retryResponse = await fetch(`${API_BASE}/products/`, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+                },
+              });
+              if (retryResponse.ok) {
+                const data = await retryResponse.json();
+                const mappedProducts = data.map(p => ({
+                  id: p.id,
+                  name: p.name,
+                  price: parseFloat(p.selling_price),
+                  category: p.category,
+                  stock: parseInt(p.quantity),
+                  image: p.image || 'https://via.placeholder.com/150?text=No+Image',
+                }));
+                setProducts(mappedProducts);
+              } else {
+                throw new Error('Failed to fetch after refresh');
+              }
+            } else {
+              throw new Error('Session expired');
+            }
+          } else {
+            throw new Error('Unauthorized');
+          }
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setError(err.message);
+        if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+          localStorage.removeItem('access');
+          localStorage.removeItem('refresh');
+          navigate('/login');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, [navigate]);
 
   const categories = useMemo(() => ['All', ...new Set(products.map(product => product.category))], [products]);
 
@@ -87,7 +177,7 @@ const POSDashboard = () => {
 
   const paymentMethods = ['Cash', 'Mobile Money', 'Card', 'Bank Transfer'];
 
-  const checkout = () => {
+  const checkout = async () => {
     if (cart.length === 0) {
       alert('Cart is empty!');
       return;
@@ -96,30 +186,143 @@ const POSDashboard = () => {
       alert('Please enter customer name!');
       return;
     }
-    
-    const receipt = {
-      date: new Date().toLocaleString('en-UG', { timeZone: 'Africa/Kampala' }),
-      customer: customerName,
-      items: cart.map(item => ({ name: item.name, qty: item.quantity, price: item.price, total: item.price * item.quantity })),
-      subtotal,
-      discountAmount,
-      taxAmount,
-      total,
-      paymentMethod,
-    };
-    
-    setReceiptData(receipt);
-    setShowReceipt(true);
-    setCart([]);
-    setCustomerName('');
-    setDiscount(0);
-    setPaymentMethod('Cash');
+    setCheckoutLoading(true);
+
+    let accessToken = localStorage.getItem('access');
+    if (!accessToken) {
+      alert('Please log in.');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      // Step 1: Create sale/order (assume you add a SaleViewSet at /api/sales/)
+      const saleData = {
+        customer_name: customerName,
+        payment_method: paymentMethod,
+        items: cart.map(item => ({
+          product: item.id,
+          quantity: item.quantity,
+          price: item.price,  // selling_price
+        })),
+        subtotal,
+        discount: discountAmount,
+        tax: taxAmount,
+        total,
+      };
+
+      const response = await fetch(`${API_BASE}/sales/`, {  // New endpoint needed
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(saleData),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Handle refresh similar to fetchProducts
+          const refreshToken = localStorage.getItem('refresh');
+          if (refreshToken) {
+            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh: refreshToken }),
+            });
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json();
+              accessToken = refreshData.access;
+              localStorage.setItem('access', accessToken);
+              // Retry
+              response = await fetch(`${API_BASE}/sales/`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify(saleData),
+              });
+            } else {
+              throw new Error('Session expired');
+            }
+          }
+        }
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || `Checkout failed: ${response.status}`);
+        }
+      }
+
+      // Step 2: If sale created, refetch products to update stock (or handle in backend)
+      // For now, simulate local stock update; backend should deduct on sale creation
+      const updatedProducts = products.map(p => {
+        const soldItem = cart.find(item => item.id === p.id);
+        if (soldItem) {
+          return { ...p, stock: p.stock - soldItem.quantity };
+        }
+        return p;
+      });
+      setProducts(updatedProducts);
+
+      // Generate receipt
+      const receipt = {
+        date: new Date().toLocaleString('en-UG', { timeZone: 'Africa/Kampala' }),
+        customer: customerName,
+        items: cart.map(item => ({ name: item.name, qty: item.quantity, price: item.price, total: item.price * item.quantity })),
+        subtotal,
+        discountAmount,
+        taxAmount,
+        total,
+        paymentMethod,
+      };
+      
+      setReceiptData(receipt);
+      setShowReceipt(true);
+      setCart([]);
+      setCustomerName('');
+      setDiscount(0);
+      setPaymentMethod('Cash');
+    } catch (err) {
+      console.error('Checkout error:', err);
+      alert(`Checkout failed: ${err.message}. Please try again.`);
+    } finally {
+      setCheckoutLoading(false);
+    }
   };
 
   const closeReceipt = () => {
     setShowReceipt(false);
     setReceiptData(null);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading products...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center p-6 bg-red-50 border border-red-200 rounded-xl">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
+          <p className="text-red-700 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col font-sans">
@@ -163,7 +366,7 @@ const POSDashboard = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredProducts.map(product => (
               <div key={product.id} className={`border border-gray-100 rounded-xl p-4 flex flex-col bg-gradient-to-br from-white to-gray-50 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 ${product.stock <= 5 ? 'ring-2 ring-yellow-300' : ''}`}>
-                <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-lg mb-3 shadow-md" />
+                <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-lg mb-3 shadow-md" onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }} />
                 <div className="flex-grow">
                   <h3 className="font-semibold text-base sm:text-lg text-gray-800 line-clamp-2">{product.name}</h3>
                   <p className="text-xs sm:text-sm text-gray-500 mb-1">{product.category}</p>
@@ -233,7 +436,7 @@ const POSDashboard = () => {
                 {cart.map(item => (
                   <div key={item.id} className="border-b border-gray-100 py-4 flex justify-between items-center group last:border-b-0">
                     <div className="flex items-center gap-3 flex-1">
-                      <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg shadow" />
+                      <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg shadow" onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=No+Image'; }} />
                       <div className="min-w-0 flex-1">
                         <h4 className="font-medium text-gray-800 truncate">{item.name}</h4>
                         <p className="text-sm text-gray-500 truncate">UGX {item.price.toLocaleString()} each</p>
@@ -296,6 +499,7 @@ const POSDashboard = () => {
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="Enter customer name"
                     className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    disabled={checkoutLoading}
                   />
                 </div>
                 
@@ -306,6 +510,7 @@ const POSDashboard = () => {
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
                     className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    disabled={checkoutLoading}
                   >
                     {paymentMethods.map(method => (
                       <option key={method} value={method}>{method}</option>
@@ -330,6 +535,7 @@ const POSDashboard = () => {
                         step="0.1"
                         value={discount}
                         onChange={(e) => setDiscount(Math.max(0, Math.min(100, Number(e.target.value))))}
+                        disabled={checkoutLoading}
                       />
                     </div>
                     <span className="text-rose-600 font-medium">-UGX {discountAmount.toLocaleString()}</span>
@@ -345,6 +551,7 @@ const POSDashboard = () => {
                         step="0.1"
                         value={tax}
                         onChange={(e) => setTax(Number(e.target.value))}
+                        disabled={checkoutLoading}
                       />
                     </div>
                     <span className="font-medium">+UGX {taxAmount.toLocaleString()}</span>
@@ -357,18 +564,27 @@ const POSDashboard = () => {
                 </div>
                 
                 <button 
-                  disabled={cart.length === 0 || !customerName.trim()}
+                  disabled={cart.length === 0 || !customerName.trim() || checkoutLoading}
                   className={`w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                    cart.length > 0 && customerName.trim()
+                    cart.length > 0 && customerName.trim() && !checkoutLoading
                       ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg hover:shadow-xl' 
                       : 'bg-gray-400 text-white'
                   }`}
                   onClick={checkout}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Complete Checkout
+                  {checkoutLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Complete Checkout
+                    </>
+                  )}
                 </button>
               </div>
             </>

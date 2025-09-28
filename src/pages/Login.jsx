@@ -6,14 +6,42 @@ const Login = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);  // Add loading state for better UX
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (email === 'admin@inventoryapp.com' && password === 'password123') {
-      onLogin();
-      navigate('/dashboard', { replace: true });
-    } else {
-      setError('Invalid email or password');
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/auth/token/', {  // Your Django token URL
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email,  // If using email auth; else change to 'username: email'
+          password: password,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Store tokens for use in other components (e.g., AddProductPage)
+        localStorage.setItem('access', data.access);
+        localStorage.setItem('refresh', data.refresh);
+        console.log('Login successful! Tokens stored.');  // For debugging
+        if (onLogin) onLogin();  // Call parent callback if provided
+        navigate('/dashboard', { replace: true });
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Invalid email or password');  // Backend error msg
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Failed to connect to server. Check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,7 +69,8 @@ const Login = ({ onLogin }) => {
               onChange={(e) => setEmail(e.target.value)}
               required
               placeholder="Enter your email"
-              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+              disabled={loading}
+              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full disabled:opacity-50"
             />
           </div>
           <div className="flex flex-col">
@@ -58,14 +87,16 @@ const Login = ({ onLogin }) => {
               onChange={(e) => setPassword(e.target.value)}
               required
               placeholder="Enter your password"
-              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+              disabled={loading}
+              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full disabled:opacity-50"
             />
           </div>
           <button
             type="submit"
-            className="bg-blue-600 text-white py-2 px-4 rounded-md text-xs sm:text-sm md:text-base mt-3 sm:mt-4"
+            disabled={loading}
+            className="bg-blue-600 text-white py-2 px-4 rounded-md text-xs sm:text-sm md:text-base mt-3 sm:mt-4 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
           >
-            Log In
+            {loading ? 'Logging In...' : 'Log In'}
           </button>
         </form>
       </div>

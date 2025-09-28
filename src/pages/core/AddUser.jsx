@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const AddUser = () => {
@@ -7,18 +7,80 @@ const AddUser = () => {
     name: '',
     email: '',
     role: 'Staff',
-    location: 'Downtown Store',
+    location: '',
     status: 'Active',
     phone: '',
     password: '',
     repeatPassword: '',
     passport: null,
   });
+  const [locations, setLocations] = useState([]);
+  const [roles] = useState(['Admin', 'Manager', 'Staff', 'Cashier']);
   const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const API_BASE = 'http://127.0.0.1:8000/api';
 
-  // Sample locations and roles to match ManageUsersPage
-  const locations = ['Downtown Store', 'Uptown Store', 'Mall Outlet'];
-  const roles = ['Admin', 'Manager', 'Staff', 'Cashier'];
+  // Fetch branches for locations
+  useEffect(() => {
+    const fetchBranches = async () => {
+      const accessToken = localStorage.getItem('access');
+      if (!accessToken) {
+        alert('Please log in to access this page.');
+        navigate('/login');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE}/branches/`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+        if (!response.ok) {
+          if (response.status === 401) {
+            const refreshToken = localStorage.getItem('refresh');
+            if (refreshToken) {
+              const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh: refreshToken }),
+              });
+              if (refreshResponse.ok) {
+                const refreshData = await refreshResponse.json();
+                localStorage.setItem('access', refreshData.access);
+                const retryResponse = await fetch(`${API_BASE}/branches/`, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${refreshData.access}`,
+                  },
+                });
+                if (!retryResponse.ok) throw new Error('Failed to fetch branches');
+                const branchesData = await retryResponse.json();
+                setLocations(branchesData.map((branch) => branch.location));
+              } else {
+                throw new Error('Session expired');
+              }
+            } else {
+              throw new Error('Unauthorized');
+            }
+          } else {
+            throw new Error('Failed to fetch branches');
+          }
+        } else {
+          const branchesData = await response.json();
+          setLocations(branchesData.map((branch) => branch.location));
+        }
+      } catch (err) {
+        setErrors({ general: err.message });
+        if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+          localStorage.removeItem('access');
+          localStorage.removeItem('refresh');
+          navigate('/login');
+        }
+      }
+    };
+    fetchBranches();
+  }, [navigate]);
 
   // Handle form input changes
   const handleInputChange = (e) => {
@@ -27,6 +89,7 @@ const AddUser = () => {
       ...prev,
       [name]: files ? files[0] : value,
     }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
   // Validate form
@@ -39,11 +102,12 @@ const AddUser = () => {
     if (!formData.password) newErrors.password = 'Password is required';
     if (formData.password !== formData.repeatPassword)
       newErrors.repeatPassword = 'Passwords do not match';
+    if (!formData.location) newErrors.location = 'Location is required';
     return newErrors;
   };
 
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
@@ -51,29 +115,96 @@ const AddUser = () => {
       return;
     }
 
-    // Simulate adding user to backend
-    const newUser = {
-      id: Math.random().toString(36).substr(2, 9), // Temporary ID for demo
-      name: formData.name,
-      email: formData.email,
-      role: formData.role,
-      status: formData.status,
-      location: formData.location,
-    };
-    // In a real app, send to backend
-    // fetch('/api/users', {
-    //   method: 'POST',
-    //   body: JSON.stringify(newUser),
-    // }).then(() => navigate('/Users'));
+    setLoading(true);
+    const accessToken = localStorage.getItem('access');
+    try {
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('email', formData.email);
+      formDataToSend.append('role', formData.role);
+      formDataToSend.append('status', formData.status);
+      formDataToSend.append('location', formData.location);
+      formDataToSend.append('phone', formData.phone);
+      formDataToSend.append('password', formData.password);
+      if (formData.passport) {
+        formDataToSend.append('passport', formData.passport);
+      }
 
-    console.log('New User:', newUser); // For demo purposes
-    navigate('/Users');
+      const response = await fetch(`${API_BASE}/users/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: formDataToSend,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          const refreshToken = localStorage.getItem('refresh');
+          if (refreshToken) {
+            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh: refreshToken }),
+            });
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json();
+              localStorage.setItem('access', refreshData.access);
+              const retryResponse = await fetch(`${API_BASE}/users/`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${refreshData.access}`,
+                },
+                body: formDataToSend,
+              });
+              if (!retryResponse.ok) throw new Error('Failed to create user');
+              navigate('/manage-users');
+            } else {
+              throw new Error('Session expired');
+            }
+          } else {
+            throw new Error('Unauthorized');
+          }
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to create user');
+        }
+      } else {
+        navigate('/users');
+      }
+    } catch (err) {
+      setErrors({ general: err.message });
+      if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+        navigate('/login');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
+  if (errors.general) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center p-6 bg-red-50 border border-red-200 rounded-xl">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
+          <p className="text-red-700 mb-4">{errors.general}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-100 to-indigo-100 flex items-center justify-center p-4 sm:p-6">
-      <div className="max-w-lg w-full bg-white border border-gray-200 rounded-xl shadow-lg p-6 sm:p-8">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-center text-indigo-800">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="max-w-lg w-full bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg p-6 sm:p-8">
+        <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-center bg-gradient-to-r from-teal-600 to-indigo-600 bg-clip-text text-transparent">
           Add New User
         </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:gap-5">
@@ -86,7 +217,9 @@ const AddUser = () => {
               value={formData.name}
               onChange={handleInputChange}
               placeholder="Enter Name"
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.name ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
             />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
@@ -100,9 +233,27 @@ const AddUser = () => {
               value={formData.email}
               onChange={handleInputChange}
               placeholder="yourname@example.com"
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
             />
             {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+          </div>
+
+          {/* Phone */}
+          <div className="flex flex-col">
+            <label className="mb-1 text-sm font-semibold text-gray-700">Phone</label>
+            <input
+              type="text"
+              name="phone"
+              value={formData.phone}
+              onChange={handleInputChange}
+              placeholder="Enter Phone Number"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.phone ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
+            />
+            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
           </div>
 
           {/* Role */}
@@ -129,14 +280,18 @@ const AddUser = () => {
               name="location"
               value={formData.location}
               onChange={handleInputChange}
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.location ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
             >
+              <option value="">Select Location</option>
               {locations.map((location) => (
                 <option key={location} value={location}>
                   {location}
                 </option>
               ))}
             </select>
+            {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location}</p>}
           </div>
 
           {/* Status */}
@@ -151,20 +306,6 @@ const AddUser = () => {
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
-          </div>
-
-          {/* Phone */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Phone</label>
-            <input
-              type="text"
-              name="phone"
-              value={formData.phone}
-              onChange={handleInputChange}
-              placeholder="Enter Phone Number"
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
-            />
-            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
           </div>
 
           {/* Passport Upload */}
@@ -188,7 +329,9 @@ const AddUser = () => {
               value={formData.password}
               onChange={handleInputChange}
               placeholder="Password"
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.password ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
             />
             {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
           </div>
@@ -202,27 +345,30 @@ const AddUser = () => {
               value={formData.repeatPassword}
               onChange={handleInputChange}
               placeholder="Password Again"
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
+              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
+                errors.repeatPassword ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
+              } bg-white text-gray-700`}
             />
-            {errors.repeatPassword && (
-              <p className="text-red-500 text-xs mt-1">{errors.repeatPassword}</p>
-            )}
+            {errors.repeatPassword && <p className="text-red-500 text-xs mt-1">{errors.repeatPassword}</p>}
           </div>
 
           {/* Buttons */}
           <div className="flex justify-center gap-4 mt-6">
             <button
               type="button"
-              onClick={() => navigate('/Users')}
-              className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-400 transition-colors duration-200 shadow"
+              onClick={() => navigate('/manage-users')}
+              className="group bg-gradient-to-r from-gray-400 to-gray-500 text-gray-100 py-3 px-6 rounded-xl text-sm font-semibold hover:from-gray-500 hover:to-gray-600 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2"
             >
-              Cancel
+              <span>❌</span> Cancel
             </button>
             <button
               type="submit"
-              className="bg-teal-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-teal-600 transition-colors duration-200 shadow"
+              disabled={loading}
+              className={`group bg-gradient-to-r from-teal-500 to-indigo-600 text-white py-3 px-6 rounded-xl text-sm font-semibold hover:from-teal-600 hover:to-indigo-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
-              Add User
+              <span>➕</span> {loading ? 'Creating...' : 'Add User'}
             </button>
           </div>
         </form>
