@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
+
+const API_BASE = 'http://127.0.0.1:8000/api';
 
 const Login = ({ onLogin }) => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const location = useLocation();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);  // Add loading state for better UX
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -14,91 +18,164 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/auth/token/', {  // Your Django token URL
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email,  // If using email auth; else change to 'username: email'
-          password: password,
-        }),
+      // Get JWT tokens
+      const tokenResponse = await axios.post(`${API_BASE}/token/`, {
+        username,
+        password
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Store tokens for use in other components (e.g., AddProductPage)
-        localStorage.setItem('access', data.access);
-        localStorage.setItem('refresh', data.refresh);
-        console.log('Login successful! Tokens stored.');  // For debugging
-        if (onLogin) onLogin();  // Call parent callback if provided
-        navigate('/dashboard', { replace: true });
+      const { access, refresh } = tokenResponse.data;
+
+      // Store tokens in localStorage
+      localStorage.setItem('access_token', access);
+      localStorage.setItem('refresh_token', refresh);
+
+      // Get user profile
+      const userResponse = await axios.get(`${API_BASE}/users/profile/`, {
+        headers: {
+          'Authorization': `Bearer ${access}`
+        }
+      });
+
+      const currentUser = userResponse.data;
+      
+      // Debug: Log user data to see what's being returned
+      console.log('User data received:', currentUser);
+      console.log('User role:', currentUser.role);
+      console.log('Previous location:', location.state?.from?.pathname);
+
+      // Call parent callback if provided
+      if (onLogin) onLogin(currentUser);
+      
+      // Determine redirect path
+      let redirectPath;
+      
+      // Check if there's a previous location to return to
+      if (location.state?.from?.pathname) {
+        redirectPath = location.state.from.pathname;
       } else {
-        const errorData = await response.json();
-        setError(errorData.detail || 'Invalid email or password');  // Backend error msg
+        // Default redirect based on role
+        redirectPath = currentUser.role === 'admin' ? '/dashboard' : '/my_profile';
+        
+        // Fallback: if role is not defined, default to dashboard
+        if (!currentUser.role) {
+          console.warn('User role not defined, defaulting to dashboard');
+          redirectPath = '/dashboard';
+        }
       }
+      
+      console.log('Redirecting to:', redirectPath);
+      
+      // Navigate to the determined path
+      navigate(redirectPath, { replace: true });
+      
     } catch (err) {
-      console.error('Login error:', err);
-      setError('Failed to connect to server. Check your connection.');
+      console.error('Login error details:', err);
+      console.error('Error response data:', err.response?.data);
+      
+      if (err.response?.status === 401) {
+        setError('Invalid username or password. Please try again.');
+      } else if (err.response?.status === 404) {
+        setError('Profile endpoint not found. Please check backend configuration.');
+      } else if (err.code === 'NETWORK_ERROR' || err.code === 'ECONNREFUSED') {
+        setError('Cannot connect to server. Make sure the backend is running on port 8000.');
+      } else {
+        setError('Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Rest of your component remains the same...
   return (
-    <div className="max-w-md mx-auto my-4 sm:my-6 md:my-8 px-2 sm:px-4 md:px-6">
-      <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-center mb-4 sm:mb-6 md:mb-8 text-gray-800">
-        Login
-      </h1>
-      <div className="bg-white border border-gray-200 shadow-sm rounded-lg p-4 sm:p-6 md:p-8">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
-          {error && (
-            <p className="text-xs sm:text-sm md:text-base text-red-600 text-center">{error}</p>
-          )}
-          <div className="flex flex-col">
-            <label
-              htmlFor="email"
-              className="mb-1 font-semibold text-gray-700 text-xs sm:text-sm md:text-base"
-            >
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="Enter your email"
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <div className="max-w-md w-full mx-auto p-4 sm:p-6 md:p-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8 text-gray-800">
+          Login to Your Account
+        </h1>
+        <div className="bg-white border border-gray-200 shadow-lg rounded-2xl p-6 sm:p-8">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <p className="text-sm text-red-600 text-center bg-red-50 p-3 rounded-lg">{error}</p>
+            )}
+            <div className="flex flex-col">
+              <label
+                htmlFor="username"
+                className="mb-2 font-semibold text-gray-700 text-sm sm:text-base"
+              >
+                Username
+              </label>
+              <input
+                type="text"
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                placeholder="Enter your username"
+                disabled={loading}
+                className="p-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label
+                htmlFor="password"
+                className="mb-2 font-semibold text-gray-700 text-sm sm:text-base"
+              >
+                Password
+              </label>
+              <input
+                type="password"
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Enter your password"
+                disabled={loading}
+                className="p-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50"
+              />
+            </div>
+            <button
+              type="submit"
               disabled={loading}
-              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full disabled:opacity-50"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label
-              htmlFor="password"
-              className="mb-1 font-semibold text-gray-700 text-xs sm:text-sm md:text-base"
+              className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg text-sm sm:text-base mt-4 disabled:opacity-50 disabled:cursor-not-allowed hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg"
             >
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Enter your password"
-              disabled={loading}
-              className="p-2 text-xs sm:text-sm md:text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full disabled:opacity-50"
-            />
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <svg
+                    className="animate-spin h-5 w-5 mr-2 text-white"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z"
+                    />
+                  </svg>
+                  Logging In...
+                </span>
+              ) : (
+                'Log In'
+              )}
+            </button>
+          </form>
+          <div className="mt-4 text-center">
+            <a
+              href="/forgot-password"
+              className="text-sm text-indigo-600 hover:text-indigo-800"
+            >
+              Forgot Password?
+            </a>
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 text-white py-2 px-4 rounded-md text-xs sm:text-sm md:text-base mt-3 sm:mt-4 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-          >
-            {loading ? 'Logging In...' : 'Log In'}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );

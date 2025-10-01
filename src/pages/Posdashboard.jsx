@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';  // Add for auth redirects
+import { useNavigate } from 'react-router-dom';
 
 const POSDashboard = () => {
   const navigate = useNavigate();
@@ -10,98 +10,77 @@ const POSDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [discount, setDiscount] = useState(0);
-  const [tax, setTax] = useState(18); // VAT in Uganda
+  const [tax, setTax] = useState(18);
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  
 
-  // API base URL
   const API_BASE = 'http://127.0.0.1:8000/api';
 
-  // Fetch products on mount
+  const refreshToken = async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) throw new Error('No refresh token');
+    
+    const response = await fetch(`${API_BASE}/auth/token/refresh/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: refreshToken }),
+    });
+    
+    if (!response.ok) throw new Error('Token refresh failed');
+    const data = await response.json();
+    localStorage.setItem('access_token', data.access);
+    return data.access;
+  };
+
+  const fetchWithAuth = async (url, options = {}) => {
+    let token = localStorage.getItem('access_token');
+    if (!token) throw new Error('No access token');
+
+    const config = {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    };
+
+    let response = await fetch(url, config);
+    
+    if (response.status === 401) {
+      token = await refreshToken();
+      config.headers.Authorization = `Bearer ${token}`;
+      response = await fetch(url, config);
+    }
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
+  };
+
   useEffect(() => {
     const fetchProducts = async () => {
-      let accessToken = localStorage.getItem('access');
-      if (!accessToken) {
-        alert('Please log in to access the dashboard.');
-        navigate('/login');
-        return;
-      }
-
       try {
-        const response = await fetch(`${API_BASE}/products/`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          // Assume API returns array of products like: [{id, name, description, cost_price, selling_price, quantity, category, image}]
-          // Map selling_price to price, quantity to stock
-          const mappedProducts = data.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: parseFloat(p.selling_price),  // Use selling_price as display price
-            category: p.category,  // Assume string or map if FK
-            stock: parseInt(p.quantity),  // quantity is stock
-            image: p.image || 'https://via.placeholder.com/150?text=No+Image',
-          }));
-          setProducts(mappedProducts);
-        } else if (response.status === 401) {
-          // Try refresh (similar to AddProduct)
-          const refreshToken = localStorage.getItem('refresh');
-          if (refreshToken) {
-            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refresh: refreshToken }),
-            });
-            if (refreshResponse.ok) {
-              const refreshData = await refreshResponse.json();
-              accessToken = refreshData.access;
-              localStorage.setItem('access', accessToken);
-              // Retry fetch
-              const retryResponse = await fetch(`${API_BASE}/products/`, {
-                method: 'GET',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${accessToken}`,
-                },
-              });
-              if (retryResponse.ok) {
-                const data = await retryResponse.json();
-                const mappedProducts = data.map(p => ({
-                  id: p.id,
-                  name: p.name,
-                  price: parseFloat(p.selling_price),
-                  category: p.category,
-                  stock: parseInt(p.quantity),
-                  image: p.image || 'https://via.placeholder.com/150?text=No+Image',
-                }));
-                setProducts(mappedProducts);
-              } else {
-                throw new Error('Failed to fetch after refresh');
-              }
-            } else {
-              throw new Error('Session expired');
-            }
-          } else {
-            throw new Error('Unauthorized');
-          }
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+        setLoading(true);
+        const response = await fetchWithAuth(`${API_BASE}/products/`);
+        const data = await response.json();
+        
+        const mappedProducts = data.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: parseFloat(p.selling_price),
+          category: p.category,
+          stock: parseInt(p.quantity),
+          image: p.image || 'https://via.placeholder.com/150?text=No+Image',
+        }));
+        setProducts(mappedProducts);
       } catch (err) {
         console.error('Fetch error:', err);
         setError(err.message);
-        if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
-          localStorage.removeItem('access');
-          localStorage.removeItem('refresh');
+        if (err.message.includes('No access token') || err.message.includes('Token refresh failed')) {
           navigate('/login');
         }
       } finally {
@@ -186,24 +165,16 @@ const POSDashboard = () => {
       alert('Please enter customer name!');
       return;
     }
+    
     setCheckoutLoading(true);
-
-    let accessToken = localStorage.getItem('access');
-    if (!accessToken) {
-      alert('Please log in.');
-      navigate('/login');
-      return;
-    }
-
     try {
-      // Step 1: Create sale/order (assume you add a SaleViewSet at /api/sales/)
       const saleData = {
         customer_name: customerName,
         payment_method: paymentMethod,
         items: cart.map(item => ({
           product: item.id,
           quantity: item.quantity,
-          price: item.price,  // selling_price
+          price: item.price,
         })),
         subtotal,
         discount: discountAmount,
@@ -211,51 +182,12 @@ const POSDashboard = () => {
         total,
       };
 
-      const response = await fetch(`${API_BASE}/sales/`, {  // New endpoint needed
+      await fetchWithAuth(`${API_BASE}/sales/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
         body: JSON.stringify(saleData),
       });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Handle refresh similar to fetchProducts
-          const refreshToken = localStorage.getItem('refresh');
-          if (refreshToken) {
-            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refresh: refreshToken }),
-            });
-            if (refreshResponse.ok) {
-              const refreshData = await refreshResponse.json();
-              accessToken = refreshData.access;
-              localStorage.setItem('access', accessToken);
-              // Retry
-              response = await fetch(`${API_BASE}/sales/`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify(saleData),
-              });
-            } else {
-              throw new Error('Session expired');
-            }
-          }
-        }
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.detail || `Checkout failed: ${response.status}`);
-        }
-      }
-
-      // Step 2: If sale created, refetch products to update stock (or handle in backend)
-      // For now, simulate local stock update; backend should deduct on sale creation
+      // Update local stock
       const updatedProducts = products.map(p => {
         const soldItem = cart.find(item => item.id === p.id);
         if (soldItem) {
@@ -643,7 +575,6 @@ const POSDashboard = () => {
               </button>
               <button
                 onClick={() => {
-                  // Simulate print
                   window.print();
                   closeReceipt();
                 }}

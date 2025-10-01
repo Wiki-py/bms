@@ -13,25 +13,91 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import axios from 'axios';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Title, Tooltip, Legend);
 
+// API base URL
+const API_BASE = 'http://127.0.0.1:8000/api';
+
 const BusinessOwnerDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
-  const [selectedBranch, setSelectedBranch] = useState('main');
+  const [selectedBranch, setSelectedBranch] = useState(null);
   const [timeOfDay, setTimeOfDay] = useState('');
-  const [notifications, setNotifications] = useState([
-    { id: 1, message: 'Low stock alert: Laptops (10 units) at Main Store', time: '10 mins ago', read: false, branch: 'main', type: 'warning' },
-    { id: 2, message: 'Sales report generated for Q3 at Outlet', time: '1 hour ago', read: false, branch: 'outlet', type: 'info' },
-    { id: 3, message: 'New employee onboarded at Cafe', time: '2 hours ago', read: true, branch: 'cafe', type: 'success' },
-    { id: 4, message: 'High sales day at Main Store! 20% above average', time: '3 hours ago', read: false, branch: 'main', type: 'success' },
-  ]);
+  const [notifications, setNotifications] = useState([]);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBranch, setEditingBranch] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', type: '', location: '' });
+  const [branches, setBranches] = useState([]);
+  const [stats, setStats] = useState({});
+  const [employees, setEmployees] = useState({});
+  const [salesData, setSalesData] = useState({});
+  const [inventoryData, setInventoryData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [user, setUser] = useState(null);
+
+  // Load user from localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    } else {
+      setError('Please log in to access the dashboard.');
+      navigate('/login');
+    }
+  }, [navigate]);
+
+  // Axios instance with auth
+  const getAxiosInstance = () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setError('Please log in to access the dashboard.');
+      return null;
+    }
+    return axios.create({
+      baseURL: API_BASE,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  };
+
+  // Token refresh interceptor
+  useEffect(() => {
+    const instance = axios.create({ baseURL: API_BASE });
+    const interceptor = instance.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+          try {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) throw new Error('No refresh token');
+            const refreshRes = await axios.post(`${API_BASE}/auth/token/refresh/`, { refresh: refreshToken });
+            const newAccess = refreshRes.data.access;
+            localStorage.setItem('access_token', newAccess);
+            originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+            return instance(originalRequest);
+          } catch (refreshErr) {
+            console.error('Token refresh failed:', refreshErr);
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user');
+            setError('Session expired. Please log in again.');
+            navigate('/login');
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => instance.interceptors.response.eject(interceptor);
+  }, [navigate]);
 
   // Set time-based greeting
   useEffect(() => {
@@ -41,164 +107,198 @@ const BusinessOwnerDashboard = () => {
     else setTimeOfDay('Evening');
   }, []);
 
-  // Branch definitions
-  const [branches, setBranches] = useState([
-    { id: 'main', name: 'Main Store', type: 'Electronics', location: 'Downtown', color: 'from-emerald-400 to-teal-500', revenue: 150000, growth: 8.2 },
-    { id: 'outlet', name: 'Fashion Outlet', type: 'Clothing', location: 'City Mall', color: 'from-purple-400 to-pink-500', revenue: 80000, growth: 5.7 },
-    { id: 'cafe', name: 'Urban Cafe', type: 'Food & Beverages', location: 'Uptown', color: 'from-orange-400 to-red-500', revenue: 45000, growth: 15.3 },
-  ]);
+  // Fetch data on mount
+  useEffect(() => {
+    if (!user) return; // Wait for user to be loaded
+    const instance = getAxiosInstance();
+    if (!instance) {
+      setLoading(false);
+      return;
+    }
 
-  // Enhanced branch stats with real-time data
-  const getBranchStats = (branchId) => {
-    const statsMap = {
-      main: [
-        { title: 'Total Revenue', value: '$150,240', change: '+8.2%', icon: '💰', color: 'from-emerald-400 to-teal-500', trend: 'up' },
-        { title: 'Total Orders', value: '1,245', change: '+12%', icon: '🛒', color: 'from-blue-400 to-cyan-500', trend: 'up' },
-        { title: 'Low Stock Items', value: '5', change: '+2', icon: '📦', color: 'from-amber-400 to-yellow-500', trend: 'up' },
-        { title: 'Customer Satisfaction', value: '94%', change: '+3%', icon: '⭐', color: 'from-violet-400 to-purple-500', trend: 'up' },
-      ],
-      outlet: [
-        { title: 'Total Revenue', value: '$80,150', change: '+5.7%', icon: '💰', color: 'from-emerald-400 to-teal-500', trend: 'up' },
-        { title: 'Total Orders', value: '890', change: '+7%', icon: '🛒', color: 'from-blue-400 to-cyan-500', trend: 'up' },
-        { title: 'Low Stock Items', value: '3', change: '0', icon: '📦', color: 'from-amber-400 to-yellow-500', trend: 'stable' },
-        { title: 'Customer Satisfaction', value: '89%', change: '+2%', icon: '⭐', color: 'from-violet-400 to-purple-500', trend: 'up' },
-      ],
-      cafe: [
-        { title: 'Total Revenue', value: '$45,680', change: '+15.3%', icon: '💰', color: 'from-emerald-400 to-teal-500', trend: 'up' },
-        { title: 'Total Orders', value: '2,100', change: '+20%', icon: '🛒', color: 'from-blue-400 to-cyan-500', trend: 'up' },
-        { title: 'Low Stock Items', value: '2', change: '-1', icon: '📦', color: 'from-amber-400 to-yellow-500', trend: 'down' },
-        { title: 'Customer Satisfaction', value: '96%', change: '+5%', icon: '⭐', color: 'from-violet-400 to-purple-500', trend: 'up' },
-      ],
-    };
-    return statsMap[branchId] || statsMap.main;
-  };
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  // Enhanced employee data
-  const getBranchEmployees = (branchId) => {
-    const employeesMap = {
-      main: [
-        { id: 1, name: 'Alex Johnson', role: 'Store Manager', status: 'Active', performance: 92, avatar: '👨🏼‍💼', sales: 45 },
-        { id: 2, name: 'Maria Garcia', role: 'Sales Associate', status: 'Active', performance: 85, avatar: '👩🏽‍💼', sales: 32 },
-        { id: 3, name: 'James Wilson', role: 'Inventory Manager', status: 'On Leave', performance: 78, avatar: '👨🏽‍💼', sales: 28 },
-      ],
-      outlet: [
-        { id: 4, name: 'Sarah Chen', role: 'Floor Supervisor', status: 'Active', performance: 95, avatar: '👩🏻‍💼', sales: 38 },
-        { id: 5, name: 'David Lee', role: 'Sales Associate', status: 'Active', performance: 88, avatar: '👨🏻‍💼', sales: 41 },
-      ],
-      cafe: [
-        { id: 6, name: 'Emma Rodriguez', role: 'Barista Lead', status: 'Active', performance: 90, avatar: '👩🏼‍💼', sales: 67 },
-        { id: 7, name: 'Tom Baker', role: 'Cashier', status: 'Active', performance: 82, avatar: '👨🏽‍💼', sales: 52 },
-      ],
-    };
-    return employeesMap[branchId] || [];
-  };
+        // Fetch branches
+        let fetchedBranches = [];
+        try {
+          const branchesRes = await instance.get('/branches/');
+          fetchedBranches = branchesRes.data.map((branch) => ({
+            ...branch,
+            color:
+              branch.type === 'Electronics'
+                ? 'from-emerald-400 to-teal-500'
+                : branch.type === 'Clothing'
+                ? 'from-purple-400 to-pink-500'
+                : 'from-orange-400 to-red-500',
+            revenue: branch.revenue || 0,
+            growth: branch.growth || 0,
+          }));
+          setBranches(fetchedBranches);
+          setSelectedBranch(fetchedBranches[0]?.id || 'main');
+        } catch (err) {
+          console.error('Error fetching branches:', err.response?.data || err.message);
+        }
 
-  // Enhanced sales data with trends
-  const getSalesData = (branchId) => {
-    const salesMap = {
-      main: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
-        datasets: [
-          {
-            label: 'Revenue ($)',
-            data: [45000, 52000, 48000, 61000, 58000, 72000, 75000, 69000],
-            backgroundColor: 'rgba(34, 197, 94, 0.8)',
-            borderColor: 'rgba(34, 197, 94, 1)',
-            borderWidth: 2,
-          },
-          {
-            label: 'Target ($)',
-            data: [40000, 45000, 50000, 55000, 60000, 65000, 70000, 75000],
-            backgroundColor: 'rgba(99, 102, 241, 0.6)',
-            borderColor: 'rgba(99, 102, 241, 1)',
-            borderWidth: 2,
-            type: 'line',
-            tension: 0.4,
-          },
-        ],
-      },
-      outlet: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
-        datasets: [
-          {
-            label: 'Revenue ($)',
-            data: [25000, 28000, 32000, 35000, 38000, 40000, 42000, 45000],
-            backgroundColor: 'rgba(168, 85, 247, 0.8)',
-            borderColor: 'rgba(168, 85, 247, 1)',
-            borderWidth: 2,
-          },
-        ],
-      },
-      cafe: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
-        datasets: [
-          {
-            label: 'Revenue ($)',
-            data: [15000, 18000, 22000, 25000, 28000, 32000, 38000, 42000],
-            backgroundColor: 'rgba(251, 191, 36, 0.8)',
-            borderColor: 'rgba(251, 191, 36, 1)',
-            borderWidth: 2,
-          },
-        ],
-      },
-    };
-    return salesMap[branchId] || salesMap.main;
-  };
+        // Fetch notifications
+        let notificationsData = [];
+        try {
+          const notificationsRes = await instance.get('/notifications/');
+          notificationsData = notificationsRes.data.map((notification) => ({
+            ...notification,
+            branch: notification.branch?.id || notification.branch,
+          }));
+          setNotifications(notificationsData);
+        } catch (err) {
+          console.error('Error fetching notifications:', err.response?.data || err.message);
+        }
 
-  // Enhanced inventory data
-  const getInventoryData = (branchId) => {
-    const inventoryMap = {
-      main: {
-        labels: ['Laptops', 'Smartphones', 'Tablets', 'Accessories', 'Monitors'],
-        datasets: [
+        // Fetch branch-specific data
+        const statsData = {};
+        const employeesData = {};
+        const salesDataMap = {};
+        const inventoryDataMap = {};
+        for (const branch of fetchedBranches) {
+          try {
+            const [statsRes, employeesRes, salesRes, inventoryRes] = await Promise.all([
+              instance.get(`/branches/${branch.id}/stats/`).catch((err) => ({ error: err })),
+              instance.get(`/branches/${branch.id}/employees/`).catch((err) => ({ error: err })),
+              instance.get(`/branches/${branch.id}/sales/`).catch((err) => ({ error: err })),
+              instance.get(`/branches/${branch.id}/inventory/`).catch((err) => ({ error: err })),
+            ]);
+
+            statsData[branch.id] = statsRes.error ? [] : statsRes.data;
+            employeesData[branch.id] = employeesRes.error ? [] : statsRes.data;
+            salesDataMap[branch.id] = salesRes.error
+              ? { labels: [], datasets: [] }
+              : {
+                  labels: salesRes.data.labels || [],
+                  datasets: salesRes.data.datasets?.map((ds) => ({
+                    ...ds,
+                    backgroundColor:
+                      branch.type === 'Electronics'
+                        ? 'rgba(34, 197, 94, 0.8)'
+                        : branch.type === 'Clothing'
+                        ? 'rgba(168, 85, 247, 0.8)'
+                        : 'rgba(251, 191, 36, 0.8)',
+                    borderColor:
+                      branch.type === 'Electronics'
+                        ? 'rgba(34, 197, 94, 1)'
+                        : branch.type === 'Clothing'
+                        ? 'rgba(168, 85, 247, 1)'
+                        : 'rgba(251, 191, 36, 1)',
+                    borderWidth: 2,
+                  })) || [],
+                };
+            inventoryDataMap[branch.id] = inventoryRes.error
+              ? { labels: [], datasets: [] }
+              : {
+                  labels: inventoryRes.data.labels || [],
+                  datasets: [
+                    {
+                      label: 'Current Stock',
+                      data: inventoryRes.data.datasets?.[0]?.data || inventoryRes.data.data || [],
+                      backgroundColor: inventoryRes.data.colors || [
+                        'rgba(34, 197, 94, 0.8)',
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(168, 85, 247, 0.8)',
+                        'rgba(251, 191, 36, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                      ],
+                    },
+                  ],
+                };
+          } catch (err) {
+            console.error(`Error fetching data for branch ${branch.id}:`, err.response?.data || err.message);
+          }
+        }
+        setStats(statsData);
+        setEmployees(employeesData);
+        setSalesData(salesDataMap);
+        setInventoryData(inventoryDataMap);
+
+        if (fetchedBranches.length === 0) {
+          throw new Error('No branches fetched, using fallback.');
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard data:', {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+          url: err.config?.url,
+        });
+        setError('Failed to load dashboard data. Using fallback.');
+        setBranches([
           {
-            label: 'Current Stock',
-            data: [15, 42, 28, 156, 22],
-            backgroundColor: [
-              'rgba(34, 197, 94, 0.8)',
-              'rgba(59, 130, 246, 0.8)',
-              'rgba(168, 85, 247, 0.8)',
-              'rgba(251, 191, 36, 0.8)',
-              'rgba(239, 68, 68, 0.8)',
-            ],
+            id: 'main',
+            name: 'Main Store',
+            type: 'Electronics',
+            location: 'Downtown',
+            color: 'from-emerald-400 to-teal-500',
+            revenue: 150000,
+            growth: 8.2,
           },
-        ],
-      },
-      outlet: {
-        labels: ['T-Shirts', 'Jeans', 'Jackets', 'Shoes', 'Accessories'],
-        datasets: [
           {
-            label: 'Current Stock',
-            data: [85, 42, 28, 65, 120],
-            backgroundColor: [
-              'rgba(59, 130, 246, 0.8)',
-              'rgba(168, 85, 247, 0.8)',
-              'rgba(251, 191, 36, 0.8)',
-              'rgba(239, 68, 68, 0.8)',
-              'rgba(34, 197, 94, 0.8)',
-            ],
+            id: 'outlet',
+            name: 'Fashion Outlet',
+            type: 'Clothing',
+            location: 'City Mall',
+            color: 'from-purple-400 to-pink-500',
+            revenue: 80000,
+            growth: 5.7,
           },
-        ],
-      },
-      cafe: {
-        labels: ['Coffee', 'Pastries', 'Sandwiches', 'Beverages', 'Snacks'],
-        datasets: [
           {
-            label: 'Current Stock',
-            data: [120, 45, 38, 89, 67],
-            backgroundColor: [
-              'rgba(251, 191, 36, 0.8)',
-              'rgba(239, 68, 68, 0.8)',
-              'rgba(34, 197, 94, 0.8)',
-              'rgba(59, 130, 246, 0.8)',
-              'rgba(168, 85, 247, 0.8)',
-            ],
+            id: 'cafe',
+            name: 'Urban Cafe',
+            type: 'Food & Beverages',
+            location: 'Uptown',
+            color: 'from-orange-400 to-red-500',
+            revenue: 45000,
+            growth: 15.3,
           },
-        ],
-      },
+        ]);
+        setNotifications([
+          {
+            id: 1,
+            message: 'Low stock alert: Laptops (10 units) at Main Store',
+            time: '10 mins ago',
+            read: false,
+            branch: 'main',
+            type: 'warning',
+          },
+          {
+            id: 2,
+            message: 'Sales report generated for Q3 at Outlet',
+            time: '1 hour ago',
+            read: false,
+            branch: 'outlet',
+            type: 'info',
+          },
+          {
+            id: 3,
+            message: 'New employee onboarded at Cafe',
+            time: '2 hours ago',
+            read: true,
+            branch: 'cafe',
+            type: 'success',
+          },
+          {
+            id: 4,
+            message: 'High sales day at Main Store! 20% above average',
+            time: '3 hours ago',
+            read: false,
+            branch: 'main',
+            type: 'success',
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
     };
-    return inventoryMap[branchId] || inventoryMap.main;
-  };
+    fetchData();
+  }, [user, navigate]);
 
   // Revenue trend data
   const revenueTrendData = {
@@ -206,12 +306,14 @@ const BusinessOwnerDashboard = () => {
     datasets: branches.map((branch, index) => ({
       label: branch.name,
       data: [branch.revenue * 0.8, branch.revenue * 0.9, branch.revenue * 1.1, branch.revenue],
-      borderColor: index === 0 ? 'rgba(34, 197, 94, 1)' : 
-                   index === 1 ? 'rgba(168, 85, 247, 1)' : 
-                   'rgba(251, 191, 36, 1)',
-      backgroundColor: index === 0 ? 'rgba(34, 197, 94, 0.1)' : 
-                      index === 1 ? 'rgba(168, 85, 247, 0.1)' : 
-                      'rgba(251, 191, 36, 0.1)',
+      borderColor:
+        index === 0 ? 'rgba(34, 197, 94, 1)' : index === 1 ? 'rgba(168, 85, 247, 1)' : 'rgba(251, 191, 36, 1)',
+      backgroundColor:
+        index === 0
+          ? 'rgba(34, 197, 94, 0.1)'
+          : index === 1
+          ? 'rgba(168, 85, 247, 0.1)'
+          : 'rgba(251, 191, 36, 0.1)',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
@@ -222,44 +324,35 @@ const BusinessOwnerDashboard = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { 
-        position: 'top',
-        labels: {
-          usePointStyle: true,
-          padding: 20,
-        }
-      },
+      legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } },
     },
     scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.1)',
-        }
-      },
-      x: {
-        grid: {
-          color: 'rgba(0, 0, 0, 0.1)',
-        }
-      }
+      y: { beginAtZero: true, grid: { color: 'rgba(0, 0, 0, 0.1)' } },
+      x: { grid: { color: 'rgba(0, 0, 0, 0.1)' } },
     },
   };
 
-  const markAsRead = (id) => {
-    setNotifications(notifications.map((notification) =>
-      notification.id === id ? { ...notification, read: true } : notification
-    ));
+  const markAsRead = async (id) => {
+    const instance = getAxiosInstance();
+    if (!instance) return;
+    try {
+      await instance.patch(`/notifications/${id}/`, { read: true });
+      setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    } catch (err) {
+      console.error('Error marking notification as read:', err.response?.data || err.message);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(notification => ({ ...notification, read: true })));
+  const markAllAsRead = async () => {
+    const instance = getAxiosInstance();
+    if (!instance) return;
+    try {
+      await instance.post('/notifications/mark-all-read/');
+      setNotifications(notifications.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err.response?.data || err.message);
+    }
   };
-
-  const currentBranch = branches.find(b => b.id === selectedBranch);
-  const currentStats = getBranchStats(selectedBranch);
-  const currentEmployees = getBranchEmployees(selectedBranch);
-  const currentSalesData = getSalesData(selectedBranch);
-  const currentInventoryData = getInventoryData(selectedBranch);
 
   const handleEditBranch = (branch) => {
     setEditingBranch(branch);
@@ -267,44 +360,105 @@ const BusinessOwnerDashboard = () => {
     setShowEditModal(true);
   };
 
-  const handleSaveEdit = (e) => {
+  const handleSaveEdit = async (e) => {
     e.preventDefault();
-    if (editingBranch) {
-      setBranches(branches.map(b => 
-        b.id === editingBranch.id 
-          ? { ...b, name: editForm.name, type: editForm.type, location: editForm.location }
-          : b
-      ));
+    if (!editingBranch) return;
+    const instance = getAxiosInstance();
+    if (!instance) return;
+    try {
+      const updatedBranch = await instance.put(`/branches/${editingBranch.id}/`, {
+        ...editForm,
+        revenue: editingBranch.revenue,
+        growth: editingBranch.growth,
+      });
+      setBranches(branches.map((b) => (b.id === editingBranch.id ? { ...b, ...updatedBranch.data } : b)));
       setShowEditModal(false);
       setEditingBranch(null);
+    } catch (err) {
+      console.error('Error updating branch:', err.response?.data || err.message);
+      setError('Failed to update branch.');
     }
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditForm(prev => ({ ...prev, [name]: value }));
+    setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const getNotificationIcon = (type) => {
     switch (type) {
-      case 'warning': return '⚠️';
-      case 'success': return '🎉';
-      case 'info': return 'ℹ️';
-      default: return '📢';
+      case 'warning':
+        return '⚠️';
+      case 'success':
+        return '🎉';
+      case 'info':
+        return 'ℹ️';
+      default:
+        return '📢';
     }
   };
 
   const getTrendIcon = (trend) => {
     switch (trend) {
-      case 'up': return '📈';
-      case 'down': return '📉';
-      default: return '➡️';
+      case 'up':
+        return '📈';
+      case 'down':
+        return '📉';
+      default:
+        return '➡️';
     }
   };
 
+  if (!user) {
+    return null; // Wait for user to load
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center text-gray-600">
+          <svg
+            className="animate-spin h-8 w-8 mx-auto mb-4 text-indigo-600"
+            viewBox="0 0 24 24"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z"
+            />
+          </svg>
+          Loading dashboard...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center text-red-500 p-6 bg-white rounded-lg shadow-lg">
+          {error}
+          <button
+            onClick={() => navigate('/login')}
+            className="mt-4 px-6 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentBranch = branches.find((b) => b.id === selectedBranch) || branches[0] || {};
+  const currentStats = stats[selectedBranch] || [];
+  const currentEmployees = employees[selectedBranch] || [];
+  const currentSalesData = salesData[selectedBranch] || { labels: [], datasets: [] };
+  const currentInventoryData = inventoryData[selectedBranch] || { labels: [], datasets: [] };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-      {/* Enhanced Header */}
+      {/* Header */}
       <header className="bg-white/90 backdrop-blur-lg shadow-2xl border-b border-indigo-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
@@ -319,15 +473,15 @@ const BusinessOwnerDashboard = () => {
                 <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
                   Business Dashboard
                 </h1>
-                <p className="text-sm text-gray-600">Good {timeOfDay}! Welcome back 👋</p>
+                <p className="text-sm text-gray-600">
+                  Good {timeOfDay}, {user.name || user.username || 'User'}! Welcome back 👋
+                </p>
               </div>
             </div>
-            
             <div className="flex items-center space-x-4">
-              {/* Branch Selector */}
               <div className="relative">
                 <select
-                  value={selectedBranch}
+                  value={selectedBranch || ''}
                   onChange={(e) => setSelectedBranch(e.target.value)}
                   className="appearance-none bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-medium text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shadow-sm hover:shadow-md transition-shadow"
                 >
@@ -341,8 +495,6 @@ const BusinessOwnerDashboard = () => {
                   <span className="text-lg">▼</span>
                 </div>
               </div>
-
-              {/* Notifications */}
               <div className="relative">
                 <button className="p-2 rounded-xl text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors relative">
                   <span className="text-2xl">🔔</span>
@@ -353,15 +505,13 @@ const BusinessOwnerDashboard = () => {
                   )}
                 </button>
               </div>
-
-              {/* User Profile */}
               <div className="hidden md:flex items-center space-x-3 bg-indigo-50/80 backdrop-blur-sm rounded-xl p-2">
                 <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-lg">
-                  BO
+                  {user.name ? user.name.charAt(0) : user.username ? user.username.charAt(0) : 'U'}
                 </div>
                 <div className="hidden lg:block">
-                  <div className="text-sm font-medium text-gray-900">Business Owner</div>
-                  <div className="text-xs text-gray-600">Admin Account</div>
+                  <div className="text-sm font-medium text-gray-900">{user.name || user.username || 'User'}</div>
+                  <div className="text-xs text-gray-600">{user.role === 'admin' ? 'Admin Account' : 'Staff Account'}</div>
                 </div>
               </div>
             </div>
@@ -369,7 +519,7 @@ const BusinessOwnerDashboard = () => {
         </div>
       </header>
 
-      {/* Enhanced Mobile Menu */}
+      {/* Mobile Menu */}
       {showMobileMenu && (
         <div className="lg:hidden bg-white/95 backdrop-blur-lg shadow-2xl border-b border-indigo-100 z-40">
           <div className="px-4 py-3 space-y-1">
@@ -387,12 +537,19 @@ const BusinessOwnerDashboard = () => {
                 }}
               >
                 <span className="mr-3">
-                  {tab === 'overview' ? '📊' :
-                   tab === 'sales' ? '💰' :
-                   tab === 'inventory' ? '📦' :
-                   tab === 'employees' ? '👥' :
-                   tab === 'reports' ? '📋' :
-                   tab === 'branches' ? '🏪' : '⚙️'}
+                  {tab === 'overview'
+                    ? '📊'
+                    : tab === 'sales'
+                    ? '💰'
+                    : tab === 'inventory'
+                    ? '📦'
+                    : tab === 'employees'
+                    ? '👥'
+                    : tab === 'reports'
+                    ? '📋'
+                    : tab === 'branches'
+                    ? '🏪'
+                    : '⚙️'}
                 </span>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
@@ -403,7 +560,7 @@ const BusinessOwnerDashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Enhanced Tabs */}
+        {/* Tabs */}
         <div className="hidden lg:block bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg mb-6 overflow-x-auto">
           <nav className="flex space-x-1 p-2">
             {['overview', 'sales', 'inventory', 'employees', 'reports', 'branches', 'settings'].map((tab) => (
@@ -417,12 +574,19 @@ const BusinessOwnerDashboard = () => {
                 onClick={() => setActiveTab(tab)}
               >
                 <span>
-                  {tab === 'overview' ? '📊' :
-                   tab === 'sales' ? '💰' :
-                   tab === 'inventory' ? '📦' :
-                   tab === 'employees' ? '👥' :
-                   tab === 'reports' ? '📋' :
-                   tab === 'branches' ? '🏪' : '⚙️'}
+                  {tab === 'overview'
+                    ? '📊'
+                    : tab === 'sales'
+                    ? '💰'
+                    : tab === 'inventory'
+                    ? '📦'
+                    : tab === 'employees'
+                    ? '👥'
+                    : tab === 'reports'
+                    ? '📋'
+                    : tab === 'branches'
+                    ? '🏪'
+                    : '⚙️'}
                 </span>
                 <span>{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
               </button>
@@ -446,8 +610,7 @@ const BusinessOwnerDashboard = () => {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="text-3xl mb-2">
-                        {branch.type === 'Electronics' ? '💻' :
-                         branch.type === 'Clothing' ? '👕' : '☕'}
+                        {branch.type === 'Electronics' ? '💻' : branch.type === 'Clothing' ? '👕' : '☕'}
                       </div>
                       <h3 className="text-xl font-bold">{branch.name}</h3>
                       <p className="text-white/90 text-sm">{branch.location}</p>
@@ -459,11 +622,18 @@ const BusinessOwnerDashboard = () => {
                       </div>
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditBranch(branch);
+                    }}
+                    className="mt-4 text-sm text-white/80 hover:text-white underline"
+                  >
+                    Edit
+                  </button>
                 </div>
               ))}
-              
-              {/* Add Branch Card */}
-              <div 
+              <div
                 className="bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-dashed border-gray-300 p-6 rounded-2xl shadow-lg transform hover:scale-105 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 hover:border-indigo-300"
                 onClick={() => navigate('/add-branch')}
               >
@@ -476,22 +646,24 @@ const BusinessOwnerDashboard = () => {
             {/* Key Metrics Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {currentStats.map((stat, index) => (
-                <div key={index} className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+                <div
+                  key={index}
+                  className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow"
+                >
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-gray-600 text-sm font-medium">{stat.title}</p>
                       <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                      <div className={`flex items-center mt-2 text-sm font-medium ${
-                        stat.trend === 'up' ? 'text-green-600' : 
-                        stat.trend === 'down' ? 'text-red-600' : 'text-gray-600'
-                      }`}>
+                      <div
+                        className={`flex items-center mt-2 text-sm font-medium ${
+                          stat.trend === 'up' ? 'text-green-600' : stat.trend === 'down' ? 'text-red-600' : 'text-gray-600'
+                        }`}
+                      >
                         <span className="mr-1">{getTrendIcon(stat.trend)}</span>
                         {stat.change}
                       </div>
                     </div>
-                    <div className={`text-3xl p-3 rounded-xl ${stat.color} bg-opacity-10`}>
-                      {stat.icon}
-                    </div>
+                    <div className={`text-3xl p-3 rounded-xl ${stat.color} bg-opacity-10`}>{stat.icon}</div>
                   </div>
                 </div>
               ))}
@@ -501,16 +673,15 @@ const BusinessOwnerDashboard = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
-                  <span className="mr-2">📈</span> Sales Performance ({currentBranch?.name})
+                  <span className="mr-2">📈</span> Sales Performance ({currentBranch?.name || 'Main Store'})
                 </h3>
                 <div className="h-80">
                   <Bar data={currentSalesData} options={chartOptions} />
                 </div>
               </div>
-              
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
-                  <span className="mr-2">📦</span> Inventory Overview ({currentBranch?.name})
+                  <span className="mr-2">📦</span> Inventory Overview ({currentBranch?.name || 'Main Store'})
                 </h3>
                 <div className="h-80">
                   <Doughnut data={currentInventoryData} options={chartOptions} />
@@ -530,7 +701,6 @@ const BusinessOwnerDashboard = () => {
 
             {/* Quick Actions & Employees */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Quick Actions */}
               <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
                   <span className="mr-2">⚡</span> Quick Actions
@@ -555,18 +725,24 @@ const BusinessOwnerDashboard = () => {
                   ))}
                 </div>
               </div>
-
-              {/* Top Employees */}
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center justify-between">
                   <span className="flex items-center">
                     <span className="mr-2">⭐</span> Top Performers
                   </span>
-                  <button className="text-sm text-indigo-600 hover:text-indigo-800">View All</button>
+                  <button
+                    onClick={() => setActiveTab('employees')}
+                    className="text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    View All
+                  </button>
                 </h3>
                 <div className="space-y-4">
                   {currentEmployees.slice(0, 3).map((employee) => (
-                    <div key={employee.id} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg">
+                    <div
+                      key={employee.id}
+                      className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg"
+                    >
                       <div className="flex items-center">
                         <div className="text-2xl mr-3">{employee.avatar}</div>
                         <div>
@@ -590,7 +766,7 @@ const BusinessOwnerDashboard = () => {
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center">
                   <span className="mr-2">🔔</span> Recent Notifications
                 </h3>
-                <button 
+                <button
                   onClick={markAllAsRead}
                   className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
                 >
@@ -599,15 +775,21 @@ const BusinessOwnerDashboard = () => {
               </div>
               <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
                 {notifications.map((notification) => (
-                  <div key={notification.id} className={`p-4 hover:bg-gray-50 transition-colors ${
-                    !notification.read ? 'bg-blue-50/50' : ''
-                  }`}>
+                  <div
+                    key={notification.id}
+                    className={`p-4 hover:bg-gray-50 transition-colors ${!notification.read ? 'bg-blue-50/50' : ''}`}
+                  >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start space-x-3">
-                        <div className={`text-lg mt-1 ${
-                          notification.type === 'warning' ? 'text-amber-500' :
-                          notification.type === 'success' ? 'text-green-500' : 'text-blue-500'
-                        }`}>
+                        <div
+                          className={`text-lg mt-1 ${
+                            notification.type === 'warning'
+                              ? 'text-amber-500'
+                              : notification.type === 'success'
+                              ? 'text-green-500'
+                              : 'text-blue-500'
+                          }`}
+                        >
                           {getNotificationIcon(notification.type)}
                         </div>
                         <div>
@@ -633,10 +815,6 @@ const BusinessOwnerDashboard = () => {
             </div>
           </div>
         )}
-
-        {/* Other tabs would follow similar enhanced patterns */}
-        {/* ... (rest of the tabs with similar enhancements) ... */}
-        
       </main>
 
       {/* Mobile Bottom Navigation */}
@@ -648,15 +826,11 @@ const BusinessOwnerDashboard = () => {
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`flex flex-col items-center p-2 rounded-xl transition-all ${
-                  activeTab === tab 
-                    ? 'text-indigo-600 bg-indigo-50' 
-                    : 'text-gray-500 hover:text-indigo-500'
+                  activeTab === tab ? 'text-indigo-600 bg-indigo-50' : 'text-gray-500 hover:text-indigo-500'
                 }`}
               >
                 <span className="text-xl">
-                  {tab === 'overview' ? '📊' :
-                   tab === 'sales' ? '💰' :
-                   tab === 'inventory' ? '📦' : '🏪'}
+                  {tab === 'overview' ? '📊' : tab === 'sales' ? '💰' : tab === 'inventory' ? '📦' : '🏪'}
                 </span>
                 <span className="text-xs mt-1">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
               </button>
