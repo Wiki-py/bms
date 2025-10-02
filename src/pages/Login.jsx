@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
 const Login = ({ onLogin }) => {
   const navigate = useNavigate();
@@ -55,7 +55,7 @@ const Login = ({ onLogin }) => {
         redirectPath = location.state.from.pathname;
       } else {
         // Default redirect based on role
-        redirectPath = currentUser.role === 'admin' ? '/dashboard' : '/my_profile';
+        redirectPath = currentUser.role === 'Admin' ? '/dashboard' : '/my_profile';
         
         // Fallback: if role is not defined, default to dashboard
         if (!currentUser.role) {
