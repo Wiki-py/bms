@@ -3,7 +3,7 @@ import { API_ENDPOINTS } from '../config/api';
 
 // Create axios instance
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000/api',
+  baseURL: 'https://pos-backend-8i4g.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
   },
