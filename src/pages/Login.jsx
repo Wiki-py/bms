@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
-const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
+const API_BASE = 'https://pos-backend-8i4g.onrender.com/api/auth';
 
 const Login = ({ onLogin }) => {
   const navigate = useNavigate();
