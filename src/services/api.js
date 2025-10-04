@@ -1,65 +1,74 @@
-import axios from 'axios';
-import { API_ENDPOINTS } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from './auth';
 
-// Create axios instance
-const api = axios.create({
-  baseURL: 'https://pos-backend-8i4g.onrender.com/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+const API_BASE_URL = 'https://your-render-app.onrender.com'; // Your Render URL
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('access_token');
+// Create axios instance or fetch wrapper
+const api = {
+  // Request interceptor to add auth token
+  request: async (url, options = {}) => {
+    const token = await AsyncStorage.getItem('access_token');
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      headers.Authorization = `Bearer ${token}`;
     }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
-// Response interceptor to handle token refresh
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+    const config = {
+      ...options,
+      headers,
+    };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-          throw new Error('No refresh token');
+    try {
+      const response = await fetch(`${API_BASE_URL}${url}`, config);
+      
+      // Handle token expiration
+      if (response.status === 401) {
+        // Try to refresh token
+        const refreshToken = await AsyncStorage.getItem('refresh_token');
+        if (refreshToken) {
+          const refreshResponse = await authAPI.refreshToken(refreshToken);
+          if (refreshResponse.ok) {
+            const newTokens = await refreshResponse.json();
+            await AsyncStorage.setItem('access_token', newTokens.access);
+            // Retry original request with new token
+            headers.Authorization = `Bearer ${newTokens.access}`;
+            return fetch(`${API_BASE_URL}${url}`, config);
+          }
         }
-
-        const response = await axios.post(API_ENDPOINTS.AUTH.REFRESH, {
-          refresh: refreshToken,
-        });
-
-        const { access } = response.data;
-        localStorage.setItem('access_token', access);
-        
-        // Retry original request with new token
-        originalRequest.headers.Authorization = `Bearer ${access}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        // Redirect to login if refresh fails
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        return Promise.reject(refreshError);
+        // Refresh failed, redirect to login
+        await AsyncStorage.multiRemove(['access_token', 'refresh_token']);
+        throw new Error('Authentication failed');
       }
-    }
 
-    return Promise.reject(error);
-  }
-);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  get: (url) => api.request(url),
+  
+  post: (url, data) => 
+    api.request(url, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  put: (url, data) =>
+    api.request(url, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (url) =>
+    api.request(url, {
+      method: 'DELETE',
+    }),
+};
 
 export default api;

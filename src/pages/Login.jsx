@@ -12,6 +12,20 @@ const Login = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const getDefaultRoute = (userRole) => {
+    const roleRoutes = {
+      'Admin': '/dashboard',
+      'Owner': '/dashboard', 
+      'Manager': '/staff_dashboard',
+      'Supervisor': '/staff_dashboard',
+      'Staff': '/point-of-sale',
+      'Cashier': '/point-of-sale',
+      'Employee': '/point-of-sale'
+    };
+    
+    return roleRoutes[userRole] || '/dashboard';
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -39,32 +53,40 @@ const Login = ({ onLogin }) => {
 
       const currentUser = userResponse.data;
       
-      // Debug: Log user data to see what's being returned
-      console.log('User data received:', currentUser);
-      console.log('User role:', currentUser.role);
-      console.log('Previous location:', location.state?.from?.pathname);
-
+      // ✅ CRITICAL: Store user in localStorage
+      localStorage.setItem('user', JSON.stringify(currentUser));
+      
       // Call parent callback if provided
       if (onLogin) onLogin(currentUser);
       
-      // Determine redirect path
+      // ✅ IMPROVED REDIRECT LOGIC
+      console.log('🔍 LOGIN REDIRECT DEBUG:', {
+        hasPreviousPath: !!location.state?.from?.pathname,
+        previousPath: location.state?.from?.pathname,
+        userRole: currentUser.role,
+        userData: currentUser
+      });
+
       let redirectPath;
-      
-      // Check if there's a previous location to return to
+
+      // Priority 1: Return to originally intended page
       if (location.state?.from?.pathname) {
         redirectPath = location.state.from.pathname;
-      } else {
-        // Default redirect based on role
-        redirectPath = currentUser.role === 'Admin' ? '/dashboard' : '/my_profile';
-        
-        // Fallback: if role is not defined, default to dashboard
-        if (!currentUser.role) {
-          console.warn('User role not defined, defaulting to dashboard');
-          redirectPath = '/dashboard';
-        }
+        console.log('🎯 Redirecting to previously intended page:', redirectPath);
+      } 
+      // Priority 2: Role-based default route
+      else {
+        redirectPath = getDefaultRoute(currentUser.role);
+        console.log('🎯 Redirecting to role-based default page:', redirectPath, 'for role:', currentUser.role);
       }
-      
-      console.log('Redirecting to:', redirectPath);
+
+      // Final fallback
+      if (!redirectPath) {
+        console.warn('⚠️ No redirect path determined, using dashboard as fallback');
+        redirectPath = '/dashboard';
+      }
+
+      console.log('🚀 Final redirect destination:', redirectPath);
       
       // Navigate to the determined path
       navigate(redirectPath, { replace: true });
@@ -78,7 +100,7 @@ const Login = ({ onLogin }) => {
       } else if (err.response?.status === 404) {
         setError('Profile endpoint not found. Please check backend configuration.');
       } else if (err.code === 'NETWORK_ERROR' || err.code === 'ECONNREFUSED') {
-        setError('Cannot connect to server. Make sure the backend is running on port 8000.');
+        setError('Cannot connect to server. Make sure the backend is running.');
       } else {
         setError('Login failed. Please try again.');
       }
@@ -87,18 +109,24 @@ const Login = ({ onLogin }) => {
     }
   };
 
-  // Rest of your component remains the same...
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       <div className="max-w-md w-full mx-auto p-4 sm:p-6 md:p-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8 text-gray-800">
-          Login to Your Account
-        </h1>
+        <div className="text-center mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
+            Welcome Back
+          </h1>
+          <p className="text-gray-600">Sign in to your account to continue</p>
+        </div>
+        
         <div className="bg-white border border-gray-200 shadow-lg rounded-2xl p-6 sm:p-8">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
-              <p className="text-sm text-red-600 text-center bg-red-50 p-3 rounded-lg">{error}</p>
+              <div className="text-sm text-red-600 text-center bg-red-50 p-3 rounded-lg border border-red-200">
+                <span className="font-medium">Error:</span> {error}
+              </div>
             )}
+            
             <div className="flex flex-col">
               <label
                 htmlFor="username"
@@ -117,6 +145,7 @@ const Login = ({ onLogin }) => {
                 className="p-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50"
               />
             </div>
+            
             <div className="flex flex-col">
               <label
                 htmlFor="password"
@@ -135,10 +164,11 @@ const Login = ({ onLogin }) => {
                 className="p-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50"
               />
             </div>
+            
             <button
               type="submit"
               disabled={loading}
-              className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg text-sm sm:text-base mt-4 disabled:opacity-50 disabled:cursor-not-allowed hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg"
+              className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg text-sm sm:text-base mt-4 disabled:opacity-50 disabled:cursor-not-allowed hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl font-medium"
             >
               {loading ? (
                 <span className="flex items-center justify-center">
@@ -160,21 +190,27 @@ const Login = ({ onLogin }) => {
                       d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z"
                     />
                   </svg>
-                  Logging In...
+                  Signing In...
                 </span>
               ) : (
-                'Log In'
+                'Sign In'
               )}
             </button>
           </form>
-          <div className="mt-4 text-center">
+          
+          <div className="mt-6 text-center">
             <a
               href="/forgot-password"
-              className="text-sm text-indigo-600 hover:text-indigo-800"
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
             >
-              Forgot Password?
+              Forgot your password?
             </a>
           </div>
+        </div>
+        
+        {/* Demo credentials hint */}
+        <div className="mt-6 text-center text-sm text-gray-500">
+          <p>Demo credentials available in the documentation</p>
         </div>
       </div>
     </div>

@@ -1,7 +1,15 @@
 import api from './api';
 
 export const authAPI = {
-  login: (credentials) => api.post('/auth/login/', credentials),
-  logout: () => api.post('/auth/logout/'),
-  getCurrentUser: () => api.get('/auth/user/'),
+  // JWT Token login (matches your Django endpoint)
+  login: (credentials) => api.post('/api/auth/token/', credentials),
+  
+  // Get current user profile (matches your Django endpoint)
+  getCurrentUser: () => api.get('/api/auth/users/profile/'),
+  
+  // Refresh token
+  refreshToken: (refreshToken) => api.post('/api/auth/token/refresh/', { refresh: refreshToken }),
+  
+  // For JWT, logout is client-side (remove tokens)
+  logout: () => Promise.resolve(), // Client will remove tokens from storage
 };
