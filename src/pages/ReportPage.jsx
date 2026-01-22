@@ -21,8 +21,8 @@ const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // API base URL - Previous link
-  const API_BASE = 'https://bms-api-2.onrender.com/api';
+  // API base URL - New POS Backend
+  const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
   // Centralized API call handler with automatic token refresh
   const apiCall = useCallback(async (url, options = {}) => {

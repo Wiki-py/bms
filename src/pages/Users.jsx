@@ -13,7 +13,7 @@ const ManageUsersPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
-  const API_BASE = 'https://bms-api-2.onrender.com/api';
+  const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
   // Centralized API call handler with automatic token refresh
   const apiCall = useCallback(async (url, options = {}) => {

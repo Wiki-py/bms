@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
-// API base URL - Previous link
-const API_BASE = 'https://bms-api-2.onrender.com/api';
+// API base URL - New POS Backend
+const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
 const BusinessSettingsPage = () => {
   // Sample initial business settings data

@@ -18,7 +18,7 @@ const AddUser = () => {
   const [roles] = useState(['Admin', 'Manager', 'Staff', 'Cashier']);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const API_BASE = 'https://bms-api-2.onrender.com/api';
+  const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
   // Fetch branches for locations
   useEffect(() => {

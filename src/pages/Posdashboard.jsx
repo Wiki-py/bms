@@ -17,7 +17,7 @@ const POSDashboard = () => {
   const [receiptData, setReceiptData] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const API_BASE = 'https://bms-api-2.onrender.com/api';
+  const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
   // Enhanced fetch function with proper error handling
   const fetchWithAuth = async (url, options = {}) => {

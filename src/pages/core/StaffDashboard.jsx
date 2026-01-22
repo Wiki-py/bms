@@ -19,7 +19,7 @@ import axios from 'axios';
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Title, Tooltip, Legend);
 
 // API base URL
-const API_BASE = 'https://bms-api-2.onrender.com/api';
+const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
 const BusinessOwnerDashboard = () => {
   const navigate = useNavigate();

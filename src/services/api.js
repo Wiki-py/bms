@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from './auth';
 
-const API_BASE_URL = 'https://bms-api-2.onrender.com/api'; // Previous API URL
+const API_BASE_URL = 'https://pos-backend-8i4g.onrender.com/api'; // New POS Backend URL
 
 // Create axios instance or fetch wrapper
 const api = {

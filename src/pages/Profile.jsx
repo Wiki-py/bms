@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API_BASE = 'https://bms-api-2.onrender.com/api';
+const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
 
 const MyProfile = () => {
   const navigate = useNavigate();
