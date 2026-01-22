@@ -23,7 +23,7 @@ const StaffDashboard = () => {
   });
 
   // API base URL
-  const API_BASE = 'https://pos-backend-8i4g.onrender.com/api';
+  const API_BASE = 'https://bms-api-2.onrender.com/api';
 
   // Load user from localStorage
   useEffect(() => {
@@ -446,16 +446,28 @@ const StaffDashboard = () => {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Key Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white p-4 rounded-2xl shadow-lg">
-                <p className="text-sm">Today's Revenue</p>
-                <p className="text-xl sm:text-2xl font-bold mt-1">{formatCurrency(staffData.todayRevenue)}</p>
-                <p className="text-xs mt-1">{staffData.todayOrders} orders</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white/80 backdrop-blur-sm border border-indigo-100 rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-emerald-100 text-emerald-600">
+                    💰
+                  </div>
+                  <span className="text-sm text-emerald-600 font-semibold">+12.5%</span>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Today's Revenue</h3>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(staffData.todayRevenue)}</p>
+                <p className="text-xs text-gray-500 mt-1">{staffData.todayOrders} orders</p>
               </div>
-              <div className="bg-gradient-to-br from-blue-400 to-indigo-500 text-white p-4 rounded-2xl shadow-lg">
-                <p className="text-sm">Monthly Target</p>
-                <p className="text-xl sm:text-2xl font-bold mt-1">{formatCurrency(staffData.monthlyProgress)}</p>
-                <p className="text-xs mt-1">
+              <div className="bg-white/80 backdrop-blur-sm border border-indigo-100 rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-blue-100 text-blue-600">
+                    📈
+                  </div>
+                  <span className="text-sm text-blue-600 font-semibold">+5%</span>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Monthly Target</h3>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(staffData.monthlyProgress)}</p>
+                <p className="text-xs text-gray-500 mt-1">
                   {progressPercentage.toFixed(1)}% of {formatCurrency(staffData.monthlyTarget)}
                 </p>
                 <div className="mt-2 w-full bg-white/20 rounded-full h-2">

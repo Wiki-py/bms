@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Bar, Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -21,78 +21,113 @@ const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // API base URL
-  const API_BASE = 'http://127.0.0.1:8000/api';
+  // API base URL - Previous link
+  const API_BASE = 'https://bms-api-2.onrender.com/api';
 
-  // Fetch reports data on mount
-  useEffect(() => {
-    const fetchReports = async () => {
-      let accessToken = localStorage.getItem('access');
-      if (!accessToken) {
-        alert('Please log in to view reports.');
-        navigate('/login');
-        return;
+  // Centralized API call handler with automatic token refresh
+  const apiCall = useCallback(async (url, options = {}) => {
+    let accessToken = localStorage.getItem('access_token') || localStorage.getItem('access');
+    
+    if (!accessToken) {
+      throw new Error('UNAUTHORIZED');
+    }
+
+    const makeRequest = async (token) => {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      return response;
+    };
+
+    let response = await makeRequest(accessToken);
+
+    if (response.status === 401) {
+      const refreshToken = localStorage.getItem('refresh_token') || localStorage.getItem('refresh');
+      
+      if (!refreshToken) {
+        throw new Error('UNAUTHORIZED');
       }
 
       try {
-        const response = await fetch(`${API_BASE}/reports/`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
+        const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh: refreshToken }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Fetched reports data:', data);  // Debug: Check this in console
-          setReportsData(data || []);  // Fallback to []
-        } else if (response.status === 401) {
-          // Try refresh (as before)
-          const refreshToken = localStorage.getItem('refresh');
-          if (refreshToken) {
-            const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refresh: refreshToken }),
-            });
-            if (refreshResponse.ok) {
-              const refreshData = await refreshResponse.json();
-              accessToken = refreshData.access;
-              localStorage.setItem('access', accessToken);
-              // Retry
-              const retryResponse = await fetch(`${API_BASE}/reports/`, {
-                method: 'GET',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${accessToken}`,
-                },
-              });
-              if (retryResponse.ok) {
-                const data = await retryResponse.json();
-                console.log('Refreshed and fetched:', data);
-                setReportsData(data || []);
-              } else {
-                throw new Error('Retry failed');
-              }
-            } else {
-              throw new Error('Session expired');
-            }
-          } else {
-            throw new Error('Unauthorized');
-          }
-        } else {
-          const errText = await response.text();  // Raw text for debug
-          console.error('API Error Response:', errText);
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (!refreshResponse.ok) {
+          throw new Error('UNAUTHORIZED');
         }
+
+        const refreshData = await refreshResponse.json();
+        accessToken = refreshData.access;
+        localStorage.setItem('access_token', accessToken);
+        localStorage.setItem('access', accessToken);
+
+        response = await makeRequest(accessToken);
+      } catch (error) {
+        throw new Error('UNAUTHORIZED');
+      }
+    }
+
+    return response;
+  }, [API_BASE]);
+
+  const handleAuthError = useCallback(() => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('access');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('refresh');
+    navigate('/login', { replace: true });
+  }, [navigate]);
+
+  // Fetch reports data
+  useEffect(() => {
+    const fetchReports = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const accessToken = localStorage.getItem('access_token') || localStorage.getItem('access');
+        if (!accessToken) {
+          handleAuthError();
+          return;
+        }
+
+        const response = await apiCall(`${API_BASE}/reports/`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch reports');
+        }
+
+        const data = await response.json();
+        
+        // Handle different response formats
+        let reportsArray = [];
+        if (Array.isArray(data)) {
+          reportsArray = data;
+        } else if (data.results && Array.isArray(data.results)) {
+          reportsArray = data.results;
+        } else if (data.data && Array.isArray(data.data)) {
+          reportsArray = data.data;
+        } else {
+          console.warn('Unexpected API response format:', data);
+          reportsArray = [];
+        }
+
+        setReportsData(reportsArray);
       } catch (err) {
-        console.error('Fetch error:', err);  // Debug log
-        setError(`Failed to load reports: ${err.message}`);
-        if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
-          localStorage.removeItem('access');
-          localStorage.removeItem('refresh');
-          navigate('/login');
+        console.error('Fetch error:', err);
+        
+        if (err.message === 'UNAUTHORIZED') {
+          handleAuthError();
+        } else {
+          setError(err.message || 'Failed to load reports');
         }
       } finally {
         setLoading(false);
@@ -100,9 +135,9 @@ const Reports = () => {
     };
 
     fetchReports();
-  }, [navigate]);
+  }, [API_BASE, apiCall, handleAuthError]);
 
-  // Prepare data (with fallbacks)
+  // Prepare data with fallbacks
   const salesData = reportsData.filter((report) => report.type === 'Sales') || [];
   const inventoryData = reportsData.filter((report) => report.type === 'Inventory') || [];
   const customerData = reportsData.filter((report) => report.type === 'Customer') || [];
@@ -115,27 +150,27 @@ const Reports = () => {
         data: salesData.map((report) => report.revenue || 0),
         backgroundColor: 'rgba(34, 197, 94, 0.8)',
         borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 1,
+        borderWidth: 2,
       },
       {
         label: 'Expenses',
         data: salesData.map((report) => report.expenses || 0),
         backgroundColor: 'rgba(239, 68, 68, 0.8)',
         borderColor: 'rgba(239, 68, 68, 1)',
-        borderWidth: 1,
+        borderWidth: 2,
       },
       {
         label: 'Profit',
         data: salesData.map((report) => report.profit || 0),
         backgroundColor: 'rgba(59, 130, 246, 0.8)',
         borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
+        borderWidth: 2,
       },
     ],
   } : null;
 
   const inventoryChartData = inventoryData.length > 0 ? {
-    labels: inventoryData.map((report) => `${report.period} Stock`),
+    labels: inventoryData.map((report) => report.period),
     datasets: [
       {
         label: 'Stock Levels',
@@ -144,27 +179,36 @@ const Reports = () => {
           'rgba(168, 85, 247, 0.8)',
           'rgba(236, 72, 153, 0.8)',
           'rgba(16, 185, 129, 0.8)',
+          'rgba(251, 146, 60, 0.8)',
         ],
         borderColor: [
           'rgba(168, 85, 247, 1)',
           'rgba(236, 72, 153, 1)',
           'rgba(16, 185, 129, 1)',
+          'rgba(251, 146, 60, 1)',
         ],
-        borderWidth: 1,
+        borderWidth: 2,
       },
     ],
   } : null;
 
   const customerChartData = customerData.length > 0 ? {
-    labels: customerData.map((report) => `${report.period} Satisfaction`),
+    labels: customerData.map((report) => report.period),
     datasets: [
       {
+        label: 'Satisfaction',
         data: customerData.map((report) => report.satisfaction || 0),
         backgroundColor: [
           'rgba(249, 115, 22, 0.8)',
           'rgba(34, 197, 94, 0.8)',
+          'rgba(59, 130, 246, 0.8)',
         ],
-        borderWidth: 1,
+        borderColor: [
+          'rgba(249, 115, 22, 1)',
+          'rgba(34, 197, 94, 1)',
+          'rgba(59, 130, 246, 1)',
+        ],
+        borderWidth: 2,
       },
     ],
   } : null;
@@ -173,20 +217,59 @@ const Reports = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } },
-      title: { display: true, font: { size: 16 } },
+      legend: { 
+        position: 'top', 
+        labels: { 
+          usePointStyle: true, 
+          padding: 15,
+          font: { size: 12, weight: 'bold' }
+        } 
+      },
+      title: { display: false },
     },
     scales: {
-      y: { beginAtZero: true, grid: { color: 'rgba(0, 0, 0, 0.1)' } },
+      y: { 
+        beginAtZero: true, 
+        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+        ticks: { font: { size: 11 } }
+      },
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 } }
+      }
+    },
+  };
+
+  const pieChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'bottom', 
+        labels: { 
+          usePointStyle: true, 
+          padding: 15,
+          font: { size: 12, weight: 'bold' }
+        } 
+      },
+      title: { display: false },
     },
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-pink-100 flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading reports...</p>
+          <div className="relative w-24 h-24 mx-auto mb-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-pink-600 rounded-full animate-ping opacity-75"></div>
+            <div className="relative bg-gradient-to-r from-violet-600 to-pink-600 rounded-full w-24 h-24 flex items-center justify-center">
+              <svg className="animate-spin h-12 w-12 text-white" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-xl font-semibold bg-gradient-to-r from-violet-600 to-pink-600 bg-clip-text text-transparent">Loading reports...</p>
         </div>
       </div>
     );
@@ -194,13 +277,18 @@ const Reports = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 flex items-center justify-center">
-        <div className="text-center p-6 bg-red-50 border border-red-200 rounded-xl">
-          <h2 className="text-xl font-bold text-red-600 mb-2">Error Loading Reports</h2>
-          <p className="text-red-700 mb-4">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-pink-100 flex items-center justify-center p-4">
+        <div className="text-center p-8 bg-white/90 backdrop-blur-xl border border-red-200 rounded-3xl max-w-md shadow-2xl">
+          <div className="w-16 h-16 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Reports</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-gradient-to-r from-red-500 to-pink-500 text-white px-6 py-3 rounded-xl hover:from-red-600 hover:to-pink-600 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-semibold"
           >
             Retry
           </button>
@@ -209,167 +297,254 @@ const Reports = () => {
     );
   }
 
-  // Debug log state
-  console.log('Rendered with reportsData length:', reportsData.length, reportsData);
+  const totalRevenue = salesData.reduce((sum, report) => sum + (report.revenue || 0), 0);
+  const totalExpenses = salesData.reduce((sum, report) => sum + (report.expenses || 0), 0);
+  const totalProfit = salesData.reduce((sum, report) => sum + (report.profit || 0), 0);
+  const avgSatisfaction = customerData.length > 0 
+    ? (customerData.reduce((sum, report) => sum + (report.satisfaction || 0), 0) / customerData.length).toFixed(1)
+    : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 py-8">
-      <div className="container mx-auto p-4 max-w-7xl">
-        <h1 className="text-4xl font-bold mb-8 text-center bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-          Reports Dashboard
-        </h1>
+    <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-pink-100 py-8 px-4 sm:px-6 lg:px-8">
+      {/* Decorative Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-blob"></div>
+        <div className="absolute top-40 right-10 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-20 left-1/2 w-72 h-72 bg-violet-300 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-blob animation-delay-4000"></div>
+      </div>
 
-        {/* Cards Section - Always show, with totals */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="group bg-gradient-to-br from-emerald-400 to-teal-500 text-white p-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Total Sales Reports</h2>
-                <p className="text-3xl font-bold">{salesData.length || 0}</p>
-                <p className="text-sm opacity-90">Across all periods</p>
+      <div className="max-w-7xl mx-auto relative">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <h1 className="text-5xl sm:text-6xl font-bold mb-4 bg-gradient-to-r from-violet-600 via-purple-600 to-pink-600 bg-clip-text text-transparent drop-shadow-sm">
+            Reports Dashboard
+          </h1>
+          <p className="text-gray-600 text-lg">Comprehensive business analytics and insights</p>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          <div className="group relative bg-white/80 backdrop-blur-sm border-2 border-white/50 rounded-3xl p-6 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-3xl opacity-0 group-hover:opacity-100 transition duration-500 blur"></div>
+            <div className="relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
               </div>
-              <div className="text-4xl opacity-75 group-hover:opacity-100 transition-opacity">📈</div>
+              <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-1">Total Revenue</h2>
+              <p className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                ${totalRevenue.toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{salesData.length} sales reports</p>
             </div>
           </div>
-          <div className="group bg-gradient-to-br from-blue-400 to-indigo-500 text-white p-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Total Inventory Reports</h2>
-                <p className="text-3xl font-bold">{inventoryData.length || 0}</p>
-                <p className="text-sm opacity-90">Across all periods</p>
+
+          <div className="group relative bg-white/80 backdrop-blur-sm border-2 border-white/50 rounded-3xl p-6 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500 to-pink-500 rounded-3xl opacity-0 group-hover:opacity-100 transition duration-500 blur"></div>
+            <div className="relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                  </svg>
+                </div>
               </div>
-              <div className="text-4xl opacity-75 group-hover:opacity-100 transition-opacity">📦</div>
+              <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-1">Total Expenses</h2>
+              <p className="text-3xl font-bold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent">
+                ${totalExpenses.toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Operational costs</p>
             </div>
           </div>
-          <div className="group bg-gradient-to-br from-orange-400 to-red-500 text-white p-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Total Revenue</h2>
-                <p className="text-3xl font-bold">
-                  ${salesData.reduce((sum, report) => sum + (report.revenue || 0), 0).toLocaleString()}
-                </p>
-                <p className="text-sm opacity-90">From sales reports</p>
+
+          <div className="group relative bg-white/80 backdrop-blur-sm border-2 border-white/50 rounded-3xl p-6 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-3xl opacity-0 group-hover:opacity-100 transition duration-500 blur"></div>
+            <div className="relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
               </div>
-              <div className="text-4xl opacity-75 group-hover:opacity-100 transition-opacity">💰</div>
+              <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-1">Net Profit</h2>
+              <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                ${totalProfit.toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">After expenses</p>
             </div>
           </div>
-          <div className="group bg-gradient-to-br from-purple-400 to-pink-500 text-white p-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Customer Satisfaction</h2>
-                <p className="text-3xl font-bold">
-                  {customerData.reduce((sum, report) => sum + (report.satisfaction || 0), 0) || 0}%
-                </p>
-                <p className="text-sm opacity-90">Average score</p>
+
+          <div className="group relative bg-white/80 backdrop-blur-sm border-2 border-white/50 rounded-3xl p-6 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-3xl opacity-0 group-hover:opacity-100 transition duration-500 blur"></div>
+            <div className="relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
               </div>
-              <div className="text-4xl opacity-75 group-hover:opacity-100 transition-opacity">😊</div>
+              <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-1">Satisfaction</h2>
+              <p className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                {avgSatisfaction}%
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{customerData.length} customer reports</p>
             </div>
           </div>
         </div>
 
-        {/* Charts Section - Conditional */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-white/20">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Sales Performance</h2>
-            {salesChartData ? (
-              <div className="h-80">
-                <Bar data={salesChartData} options={chartOptions} />
-              </div>
-            ) : (
-              <div className="h-80 flex items-center justify-center text-gray-500">
-                No sales data available
-              </div>
-            )}
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+          <div className="relative bg-white/80 backdrop-blur-xl border-2 border-white/50 rounded-3xl p-6 shadow-xl">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-3xl opacity-10"></div>
+            <div className="relative">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                Sales Performance
+              </h2>
+              {salesChartData ? (
+                <div className="h-80">
+                  <Bar data={salesChartData} options={chartOptions} />
+                </div>
+              ) : (
+                <div className="h-80 flex flex-col items-center justify-center text-gray-400">
+                  <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <p className="text-lg font-medium">No sales data available</p>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-white/20">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Inventory Stock Levels</h2>
-            {inventoryChartData ? (
-              <div className="h-80">
-                <Pie data={inventoryChartData} options={chartOptions} />
-              </div>
-            ) : (
-              <div className="h-80 flex items-center justify-center text-gray-500">
-                No inventory data available
-              </div>
-            )}
+
+          <div className="relative bg-white/80 backdrop-blur-xl border-2 border-white/50 rounded-3xl p-6 shadow-xl">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-3xl opacity-10"></div>
+            <div className="relative">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </div>
+                Inventory Stock Levels
+              </h2>
+              {inventoryChartData ? (
+                <div className="h-80">
+                  <Pie data={inventoryChartData} options={pieChartOptions} />
+                </div>
+              ) : (
+                <div className="h-80 flex flex-col items-center justify-center text-gray-400">
+                  <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <p className="text-lg font-medium">No inventory data available</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Customer Chart - Conditional */}
-        {customerChartData ? (
-          <div className="grid grid-cols-1 mb-8">
-            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-white/20 mx-auto max-w-md">
-              <h2 className="text-xl font-semibold mb-4 text-gray-800">Customer Satisfaction Distribution</h2>
-              <div className="h-64">
-                <Pie data={customerChartData} options={chartOptions} />
+        {/* Customer Satisfaction Chart */}
+        {customerChartData && (
+          <div className="mb-10">
+            <div className="relative bg-white/80 backdrop-blur-xl border-2 border-white/50 rounded-3xl p-6 shadow-xl max-w-2xl mx-auto">
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500 to-pink-500 rounded-3xl opacity-10"></div>
+              <div className="relative">
+                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center justify-center">
+                  <div className="w-8 h-8 bg-gradient-to-r from-orange-500 to-pink-500 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  Customer Satisfaction Distribution
+                </h2>
+                <div className="h-64">
+                  <Pie data={customerChartData} options={pieChartOptions} />
+                </div>
               </div>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {/* Table Section - Always show, empty if no data */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
+        {/* Table Section */}
+        <div className="relative bg-white/80 backdrop-blur-xl border-2 border-white/50 rounded-3xl shadow-xl overflow-hidden mb-10">
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-3xl opacity-10"></div>
+          <div className="relative overflow-x-auto">
             <table className="min-w-full">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                <tr>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider">ID</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Type</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Period</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider hidden md:table-cell">Revenue</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider hidden lg:table-cell">Expenses</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider hidden lg:table-cell">Profit</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider hidden xl:table-cell">Extra Metric</th>
-                  <th className="py-4 px-6 border-b text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Actions</th>
+              <thead>
+                <tr className="bg-gradient-to-r from-violet-50 to-purple-50">
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">ID</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Type</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Period</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider hidden md:table-cell">Revenue</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider hidden lg:table-cell">Expenses</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider hidden lg:table-cell">Profit</th>
+                  <th className="py-4 px-6 border-b-2 border-violet-200 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-100">
                 {reportsData.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="py-12 text-center text-gray-500">
-                      No reports data available yet. Create some sales or inventory to see results.
+                    <td colSpan="7" className="py-16 text-center">
+                      <div className="flex flex-col items-center">
+                        <svg className="w-24 h-24 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p className="text-gray-500 text-lg font-medium">No reports data available yet</p>
+                        <p className="text-gray-400 text-sm mt-1">Generate your first report to see data here</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   reportsData.map((report) => (
                     <tr
                       key={report.id}
-                      className={`hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-colors duration-200 ${
-                        report.type === 'Sales' ? 'bg-emerald-50' : report.type === 'Inventory' ? 'bg-blue-50' : 'bg-purple-50'
-                      }`}
+                      className="hover:bg-gradient-to-r hover:from-violet-50 hover:to-purple-50 transition-colors duration-200"
                     >
-                      <td className="py-4 px-6 text-sm font-medium text-gray-900">{report.id}</td>
-                      <td className="py-4 px-6 text-sm text-gray-900">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      <td className="py-4 px-6 text-sm font-bold text-gray-800">#{report.id}</td>
+                      <td className="py-4 px-6 text-sm">
+                        <span className={`inline-flex px-3 py-1.5 text-xs font-bold rounded-full ${
                           report.type === 'Sales'
-                            ? 'bg-emerald-100 text-emerald-800'
+                            ? 'bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border border-emerald-200'
                             : report.type === 'Inventory'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-purple-100 text-purple-800'
+                            ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border border-blue-200'
+                            : 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 border border-purple-200'
                         }`}>
                           {report.type}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-sm text-gray-900">{report.period}</td>
-                      <td className="py-4 px-6 text-sm text-gray-900 hidden md:table-cell">
-                        {report.revenue !== null ? `$${Number(report.revenue).toLocaleString()}` : 'N/A'}
+                      <td className="py-4 px-6 text-sm font-medium text-gray-700">{report.period}</td>
+                      <td className="py-4 px-6 text-sm font-semibold text-emerald-600 hidden md:table-cell">
+                        {report.revenue !== null && report.revenue !== undefined ? `${Number(report.revenue).toLocaleString()}` : '—'}
                       </td>
-                      <td className="py-4 px-6 text-sm text-gray-900 hidden lg:table-cell">
-                        {report.expenses !== null ? `$${Number(report.expenses).toLocaleString()}` : 'N/A'}
+                      <td className="py-4 px-6 text-sm font-semibold text-red-600 hidden lg:table-cell">
+                        {report.expenses !== null && report.expenses !== undefined ? `${Number(report.expenses).toLocaleString()}` : '—'}
                       </td>
-                      <td className="py-4 px-6 text-sm text-gray-900 hidden lg:table-cell">
-                        {report.profit !== null ? `$${Number(report.profit).toLocaleString()}` : 'N/A'}
+                      <td className="py-4 px-6 text-sm font-semibold text-blue-600 hidden lg:table-cell">
+                        {report.profit !== null && report.profit !== undefined ? `${Number(report.profit).toLocaleString()}` : '—'}
                       </td>
-                      <td className="py-4 px-6 text-sm text-gray-900 hidden xl:table-cell">
-                        {report.stockLevel !== undefined ? `${report.stockLevel} units` : report.satisfaction !== undefined ? `${report.satisfaction}%` : 'N/A'}
-                      </td>
-                      <td className="py-4 px-6 text-sm font-medium">
+                      <td className="py-4 px-6 text-sm">
                         <div className="flex space-x-2">
-                          <button className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-xs transition-colors duration-200 flex items-center gap-1">
-                            <span>👁️</span> View
+                          <button className="group bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            View
                           </button>
-                          <button className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md text-xs transition-colors duration-200 flex items-center gap-1">
-                            <span>⬇️</span> Download
+                          <button className="group bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download
                           </button>
                         </div>
                       </td>
@@ -382,12 +557,38 @@ const Reports = () => {
         </div>
 
         {/* Generate Report Button */}
-        <div className="mt-8 flex justify-center">
-          <button className="group bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-8 py-3 rounded-xl hover:from-emerald-600 hover:to-teal-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 text-sm font-semibold flex items-center gap-2">
-            <span>✨</span> Generate New Report
+        <div className="flex justify-center">
+          <button className="group relative bg-gradient-to-r from-violet-500 via-purple-500 to-pink-500 text-white px-10 py-5 rounded-2xl hover:from-violet-600 hover:via-purple-600 hover:to-pink-600 shadow-2xl hover:shadow-3xl transform hover:-translate-y-1 transition-all duration-300 text-lg font-bold flex items-center gap-3">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            Generate New Report
           </button>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes blob {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          25% { transform: translate(20px, -20px) scale(1.1); }
+          50% { transform: translate(-20px, 20px) scale(0.9); }
+          75% { transform: translate(20px, 20px) scale(1.05); }
+        }
+        
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+        
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+      `}</style>
     </div>
   );
 };

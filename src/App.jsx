@@ -7,7 +7,7 @@ import StaffDashboard from './pages/core/StaffDashboard';
 import ProductsPage from './pages/ProductsPage';
 import ReportPage from './pages/ReportPage';
 import InventoryPage from './pages/inventory/InventoryPage';
-import Users from './pages/Users';
+import ManageUsersPage from './pages/Users';
 import Profile from './pages/Profile';
 import BusinessSettingsPage from './pages/Settings';
 import UDashboard from './pages/core/UDashBoard';
@@ -128,7 +128,7 @@ function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/products" element={< Products />} />
             <Route path="/logout" element={<LogoutRoute />} />
-            <Route path="/users" element={<Users />} />
+            <Route path="/users" element={<ManageUsersPage />} />
             <Route path="/my_profile" element={<Profile />} />
             <Route path="/settings" element={<BusinessSettingsPage />} />
             <Route path= "staff_dashboard" element={<UDashboard />} />

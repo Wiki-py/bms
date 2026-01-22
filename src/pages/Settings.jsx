@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+// API base URL - Previous link
+const API_BASE = 'https://bms-api-2.onrender.com/api';
+
 const BusinessSettingsPage = () => {
   // Sample initial business settings data
   const [settings, setSettings] = useState({

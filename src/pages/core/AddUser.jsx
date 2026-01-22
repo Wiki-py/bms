@@ -18,12 +18,12 @@ const AddUser = () => {
   const [roles] = useState(['Admin', 'Manager', 'Staff', 'Cashier']);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const API_BASE = 'http://127.0.0.1:8000/api';
+  const API_BASE = 'https://bms-api-2.onrender.com/api';
 
   // Fetch branches for locations
   useEffect(() => {
     const fetchBranches = async () => {
-      const accessToken = localStorage.getItem('access');
+      const accessToken = localStorage.getItem('access_token') || localStorage.getItem('access');
       if (!accessToken) {
         alert('Please log in to access this page.');
         navigate('/login');
@@ -38,7 +38,7 @@ const AddUser = () => {
         });
         if (!response.ok) {
           if (response.status === 401) {
-            const refreshToken = localStorage.getItem('refresh');
+            const refreshToken = localStorage.getItem('refresh_token') || localStorage.getItem('refresh');
             if (refreshToken) {
               const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
                 method: 'POST',
@@ -48,6 +48,7 @@ const AddUser = () => {
               if (refreshResponse.ok) {
                 const refreshData = await refreshResponse.json();
                 localStorage.setItem('access', refreshData.access);
+                localStorage.setItem('access_token', refreshData.access);
                 const retryResponse = await fetch(`${API_BASE}/branches/`, {
                   headers: {
                     'Content-Type': 'application/json',
@@ -56,7 +57,21 @@ const AddUser = () => {
                 });
                 if (!retryResponse.ok) throw new Error('Failed to fetch branches');
                 const branchesData = await retryResponse.json();
-                setLocations(branchesData.map((branch) => branch.location));
+                
+                // Handle different API response formats for branches
+                let branchesArray = [];
+                if (Array.isArray(branchesData)) {
+                  branchesArray = branchesData;
+                } else if (branchesData.results && Array.isArray(branchesData.results)) {
+                  branchesArray = branchesData.results;
+                } else if (branchesData.data && Array.isArray(branchesData.data)) {
+                  branchesArray = branchesData.data;
+                } else {
+                  console.warn('Unexpected branches API response format:', branchesData);
+                  branchesArray = [];
+                }
+                
+                setLocations(branchesArray.map((branch) => branch.location));
               } else {
                 throw new Error('Session expired');
               }
@@ -68,12 +83,33 @@ const AddUser = () => {
           }
         } else {
           const branchesData = await response.json();
-          setLocations(branchesData.map((branch) => branch.location));
+          
+          // Handle different API response formats for branches
+          let branchesArray = [];
+          if (Array.isArray(branchesData)) {
+            branchesArray = branchesData;
+          } else if (branchesData.results && Array.isArray(branchesData.results)) {
+            branchesArray = branchesData.results;
+          } else if (branchesData.data && Array.isArray(branchesData.data)) {
+            branchesArray = branchesData.data;
+          } else {
+            console.warn('Unexpected branches API response format:', branchesData);
+            branchesArray = [];
+          }
+          
+          // Validate main branches response
+          if (!branchesArray.length) {
+            throw new Error('No branches found');
+          }
+          
+          setLocations(branchesArray.map((branch) => branch.location));
         }
       } catch (err) {
         setErrors({ general: err.message });
         if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+          localStorage.removeItem('access_token');
           localStorage.removeItem('access');
+          localStorage.removeItem('refresh_token');
           localStorage.removeItem('refresh');
           navigate('/login');
         }
@@ -116,7 +152,7 @@ const AddUser = () => {
     }
 
     setLoading(true);
-    const accessToken = localStorage.getItem('access');
+    const accessToken = localStorage.getItem('access_token') || localStorage.getItem('access');
     try {
       const formDataToSend = new FormData();
       formDataToSend.append('name', formData.name);
@@ -140,7 +176,7 @@ const AddUser = () => {
 
       if (!response.ok) {
         if (response.status === 401) {
-          const refreshToken = localStorage.getItem('refresh');
+          const refreshToken = localStorage.getItem('refresh_token') || localStorage.getItem('refresh');
           if (refreshToken) {
             const refreshResponse = await fetch(`${API_BASE}/token/refresh/`, {
               method: 'POST',
@@ -150,6 +186,7 @@ const AddUser = () => {
             if (refreshResponse.ok) {
               const refreshData = await refreshResponse.json();
               localStorage.setItem('access', refreshData.access);
+              localStorage.setItem('access_token', refreshData.access);
               const retryResponse = await fetch(`${API_BASE}/users/`, {
                 method: 'POST',
                 headers: {
@@ -158,7 +195,7 @@ const AddUser = () => {
                 body: formDataToSend,
               });
               if (!retryResponse.ok) throw new Error('Failed to create user');
-              navigate('/manage-users');
+              navigate('/users');
             } else {
               throw new Error('Session expired');
             }
@@ -202,176 +239,221 @@ const AddUser = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4 sm:p-6">
-      <div className="max-w-lg w-full bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg p-6 sm:p-8">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-center bg-gradient-to-r from-teal-600 to-indigo-600 bg-clip-text text-transparent">
-          Add New User
-        </h1>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:gap-5">
-          {/* Name */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">User Name</label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleInputChange}
-              placeholder="Enter Name"
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.name ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            />
-            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
-          </div>
-
-          {/* Email */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">User Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              placeholder="yourname@example.com"
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            />
-            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
-          </div>
-
-          {/* Phone */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Phone</label>
-            <input
-              type="text"
-              name="phone"
-              value={formData.phone}
-              onChange={handleInputChange}
-              placeholder="Enter Phone Number"
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.phone ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            />
-            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
-          </div>
-
-          {/* Role */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Role</label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleInputChange}
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Location */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Location</label>
-            <select
-              name="location"
-              value={formData.location}
-              onChange={handleInputChange}
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.location ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            >
-              <option value="">Select Location</option>
-              {locations.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </select>
-            {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location}</p>}
-          </div>
-
-          {/* Status */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Status</label>
-            <select
-              name="status"
-              value={formData.status}
-              onChange={handleInputChange}
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700"
-            >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-
-          {/* Passport Upload */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">User Passport</label>
-            <input
-              type="file"
-              name="passport"
-              accept="image/jpeg,image/png"
-              onChange={handleInputChange}
-              className="p-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
-            />
-          </div>
-
-          {/* Password */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">User Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              placeholder="Password"
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.password ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            />
-            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
-          </div>
-
-          {/* Repeat Password */}
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-semibold text-gray-700">Repeat Password</label>
-            <input
-              type="password"
-              name="repeatPassword"
-              value={formData.repeatPassword}
-              onChange={handleInputChange}
-              placeholder="Password Again"
-              className={`p-2 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 ${
-                errors.repeatPassword ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-teal-500'
-              } bg-white text-gray-700`}
-            />
-            {errors.repeatPassword && <p className="text-red-500 text-xs mt-1">{errors.repeatPassword}</p>}
-          </div>
-
-          {/* Buttons */}
-          <div className="flex justify-center gap-4 mt-6">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
+                <span className="text-2xl">👤</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Add New User</h1>
+            </div>
             <button
               type="button"
-              onClick={() => navigate('/manage-users')}
-              className="group bg-gradient-to-r from-gray-400 to-gray-500 text-gray-100 py-3 px-6 rounded-xl text-sm font-semibold hover:from-gray-500 hover:to-gray-600 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2"
+              onClick={() => navigate('/users')}
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl transition-all duration-300 flex items-center space-x-2"
             >
-              <span>❌</span> Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className={`group bg-gradient-to-r from-teal-500 to-indigo-600 text-white py-3 px-6 rounded-xl text-sm font-semibold hover:from-teal-600 hover:to-indigo-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2 ${
-                loading ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              <span>➕</span> {loading ? 'Creating...' : 'Add User'}
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7" />
+              </svg>
+              <span className="text-white font-medium">Back to Users</span>
             </button>
           </div>
-        </form>
+        </div>
+
+        {/* Error Banner */}
+        {errors.general && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-red-600 mr-2">⚠️</span>
+                <span className="text-red-800">{errors.general}</span>
+              </div>
+              <button
+                onClick={() => setErrors((prev) => ({ ...prev, general: '' }))}
+                className="text-red-700 hover:text-red-800 font-medium"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Form Content */}
+        <div className="bg-white/90 backdrop-blur-sm border border-white/20 rounded-2xl shadow-2xl p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter full name"
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.name ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                />
+                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder="yourname@example.com"
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                />
+                {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  placeholder="+1 (555) 123-4567"
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.phone ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                />
+                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+              </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
+                <select
+                  name="role"
+                  value={formData.role}
+                  onChange={handleInputChange}
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200"
+                >
+                  {roles.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Location */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                <select
+                  name="location"
+                  value={formData.location}
+                  onChange={handleInputChange}
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.location ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                >
+                  <option value="">Select Location</option>
+                  {locations.map((location) => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+                {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location}</p>}
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                <input
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  placeholder="Enter secure password"
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.password ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                />
+                {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+              </div>
+
+              {/* Repeat Password */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Confirm Password</label>
+                <input
+                  type="password"
+                  name="repeatPassword"
+                  value={formData.repeatPassword}
+                  onChange={handleInputChange}
+                  placeholder="Re-enter password"
+                  className={`w-full p-3 border rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 ${
+                    errors.repeatPassword ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                  }`}
+                />
+                {errors.repeatPassword && <p className="text-red-500 text-xs mt-1">{errors.repeatPassword}</p>}
+              </div>
+            </div>
+
+            {/* Passport Upload */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Passport/ID Document</label>
+              <div className="relative">
+                <input
+                  type="file"
+                  name="passport"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={handleInputChange}
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 transition-all duration-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+                <p className="text-xs text-gray-500 mt-1">Upload passport or ID document (JPEG, PNG, or PDF)</p>
+              </div>
+            </div>
+
+            {/* Form Actions */}
+            <div className="flex flex-col sm:flex-row gap-4 pt-6">
+              <button
+                type="button"
+                onClick={() => navigate('/users')}
+                className="w-full sm:w-auto bg-gradient-to-r from-gray-400 to-gray-500 text-white py-3 px-6 rounded-xl hover:from-gray-500 hover:to-gray-600 shadow-md transform hover:scale-105 transition-all focus:outline-none focus:ring-2 focus:ring-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full sm:w-auto bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 px-6 rounded-xl hover:from-indigo-600 hover:to-purple-600 shadow-md transform hover:scale-105 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                {loading ? 'Creating User...' : 'Create User'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

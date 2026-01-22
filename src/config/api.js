@@ -1,4 +1,4 @@
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000/api';
+const API_BASE = process.env.REACT_APP_API_BASE || 'https://bms-api-2.onrender.com/api';
 
 export const API_ENDPOINTS = {
   AUTH: {
